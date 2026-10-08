@@ -2,7 +2,7 @@
 
 See yourself the way others see you. Enter a name; ExpertScan finds public profiles, lets you confirm which are really yours, reads them, and writes a perception report: archetype, outer impression, perception gaps and recommendations.
 
-**Free for visitors.** No account and no key needed. The site owner sets a server key for **Google Gemini** (free tier via [Google AI Studio](https://aistudio.google.com/apikey)), **OpenAI** or **Anthropic**. Visitors can optionally use their own key instead; it stays in their browser and is never stored on the server.
+**Free for visitors; the owner's OpenAI account pays the usage.** No account and no key needed. The site owner sets a server key for **OpenAI** (Gemini and Anthropic are also supported). Visitors can optionally use their own key instead; it stays in their browser and is never stored on the server.
 
 Every profile, fact and report comes from live web search and scraping. The app contains no sample data.
 
@@ -12,7 +12,7 @@ Requires Node.js 20+.
 
 ```bash
 npm install
-cp .env.example .env.local   # add GEMINI_API_KEY (free)
+cp .env.example .env.local   # add OPENAI_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
@@ -41,7 +41,7 @@ Set `AI_PROVIDER` to choose which one is used when several keys exist. Web searc
 2. On [render.com](https://render.com): **New → Blueprint**, select the repo. `render.yaml` sets up the free web service.
 4. Open the URL Render gives you. The free tier sleeps when idle, so the first load can take about a minute.
 
-3. In the service's **Environment** tab add `GEMINI_API_KEY` (free). Without a key the app shows a "not configured" message.
+3. In the service's **Environment** tab add `OPENAI_API_KEY`. Without a key the app falls back to a keyless mode that is often unavailable.
 
 Optional: `RATE_LIMIT_PER_MIN` (default 60 per IP).
 
