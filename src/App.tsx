@@ -31,6 +31,7 @@ import {
 export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(getSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [searchRun, setSearchRun] = useState(0);
   const [stage, setStage] = useState<'search' | 'researching' | 'report'>('search');
   const [nameInput, setNameInput] = useState('');
   const [affiliationInput, setAffiliationInput] = useState('');
@@ -199,9 +200,24 @@ export default function App() {
     });
   };
 
+  // Wipes everything about the previous person so nothing carries over into the next search
   const handleResetToSearch = () => {
     setStage('search');
     setErrorMsg(null);
+    setReportData(null);
+    setCandidateWebsites([]);
+    setVerifiedWebsites([]);
+    setExcludedWebsites([]);
+    setCustomUrls([]);
+    setNewCustomUrl('');
+    setShowAddCustomUrl(false);
+    setNameInput('');
+    setAffiliationInput('');
+    setDomainInput('');
+    setShowOptionalDetails(false);
+    setCurrentAnalyzingName('');
+    setIsVerificationModalOpen(false);
+    setSearchRun((n) => n + 1);
   };
 
   const runAnalysis = async (input: ExpertProfileInput) => {
@@ -527,6 +543,7 @@ export default function App() {
 
       {/* Website Verification & Live Preview Modal */}
       <WebsiteVerificationModal
+        key={searchRun}
         isOpen={isVerificationModalOpen}
         onClose={() => setIsVerificationModalOpen(false)}
         expertName={nameInput.trim() || currentAnalyzingName || 'Subject'}

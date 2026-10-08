@@ -129,7 +129,7 @@ app.get('/api/search-profiles', async (req, res) => {
 
   try {
     const prompt = `Perform a live web search for the public professional footprint of "${name}"${affiliation ? ` affiliated with "${affiliation}"` : ''}${domain ? ` working in "${domain}"` : ''}.
-Find 4 to 8 candidate public URLs for this person (e.g. LinkedIn, corporate website, Google Scholar, Wikipedia, Twitter/X, speaker profile, personal domain).
+Find up to 12 candidate public URLs for this person. Always look for and include, when they exist: LinkedIn, Facebook, Instagram, TikTok, X/Twitter, YouTube, Discord, Reddit, Google Scholar, plus Wikipedia, corporate or personal websites, new or lesser-known domains, speaker profiles and directories. Do not invent a profile for a platform where nothing was found.
 Also flag any URL that probably belongs to a different person with the same name (name collision).
 Then collect verifiable background facts. Only include facts you found in real sources, with the real source URL. If you find nothing for a category, return an empty array. Never invent anything.
 

@@ -320,12 +320,19 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const queries = [
     q,
     ...(extra ? [`${q} ${extra}`] : []),
+    // Social platforms are always searched
     `${q} site:linkedin.com/in`,
+    `${q} site:facebook.com`,
+    `${q} site:instagram.com OR site:tiktok.com`,
     `${q} site:youtube.com`,
+    `${q} site:x.com OR site:twitter.com OR site:threads.net`,
+    `${q} discord OR site:discord.com OR site:discord.gg`,
+    `${q} site:reddit.com OR site:quora.com`,
+    // Academic, press and reputation
     `${q} site:scholar.google.com OR site:researchgate.net`,
     `${q} interview podcast keynote`,
     `${q} award university education`,
-    ...(deep ? [`${q} reviews testimonials`, `${q} news`, `${q} site:facebook.com OR site:x.com`] : []),
+    ...(deep ? [`${q} reviews testimonials`, `${q} news`] : []),
   ];
 
   const jobs: { engine: (typeof ENGINES)[number]; query: string }[] = queries.flatMap((query) => ENGINES.map((engine) => ({ engine, query })));

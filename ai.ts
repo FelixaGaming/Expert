@@ -232,7 +232,7 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
   const { full: prompt, sources } = await withSearchContext(rawPrompt, search, query, research);
   return new Promise((resolve, reject) => {
-    const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--permission-mode', 'dontAsk'];
+    const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
