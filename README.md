@@ -2,7 +2,7 @@
 
 See yourself the way others see you. Enter a name; ExpertScan finds public profiles, lets you confirm which are really yours, reads them, and writes a perception report: archetype, outer impression, perception gaps and recommendations.
 
-**Free to use.** There is no server-side AI key and no paid plan. Each visitor connects their own **OpenAI**, **Anthropic** or **Google Gemini** key in Settings. The key stays in the browser, is sent with each request, is forwarded to the provider and is never stored or logged on the server. Gemini offers a free tier through [Google AI Studio](https://aistudio.google.com/apikey).
+**Free for visitors.** No account and no key needed. The site owner sets a server key for **Google Gemini** (free tier via [Google AI Studio](https://aistudio.google.com/apikey)), **OpenAI** or **Anthropic**. Visitors can optionally use their own key instead; it stays in their browser and is never stored on the server.
 
 Every profile, fact and report comes from live web search and scraping. The app contains no sample data.
 
@@ -12,7 +12,8 @@ Requires Node.js 20+.
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+cp .env.example .env.local   # add GEMINI_API_KEY (free)
+npm run dev                  # http://localhost:3000
 ```
 
 ## Providers
@@ -23,7 +24,7 @@ npm run dev   # http://localhost:3000
 | OpenAI | `gpt-4o-mini` | Responses API `web_search` tool |
 | Anthropic | `claude-haiku-4-5` | `web_search` tool |
 
-Visitors can override the model in Settings. Web search must be available on the visitor's account.
+Set `AI_PROVIDER` to choose which one is used when several keys exist. Web search must be available on the key's account.
 
 ## Scripts
 
@@ -38,9 +39,11 @@ Visitors can override the model in Settings. Web search must be available on the
 
 1. Push this repo to GitHub.
 2. On [render.com](https://render.com): **New → Blueprint**, select the repo. `render.yaml` sets up the free web service.
-3. Open the URL Render gives you. The free tier sleeps when idle, so the first load can take about a minute.
+4. Open the URL Render gives you. The free tier sleeps when idle, so the first load can take about a minute.
 
-No environment variables are required. Optional: `RATE_LIMIT_PER_MIN` (default 60 per IP).
+3. In the service's **Environment** tab add `GEMINI_API_KEY` (free). Without a key the app shows a "not configured" message.
+
+Optional: `RATE_LIMIT_PER_MIN` (default 60 per IP).
 
 ## Safety notes
 

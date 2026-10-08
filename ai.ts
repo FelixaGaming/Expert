@@ -1,5 +1,4 @@
-// Provider-agnostic model calls. Every request carries the visitor's own API key
-// (bring-your-own-key), so the app owner never pays for model usage.
+// Provider-agnostic model calls (OpenAI, Anthropic, Gemini), using the server's key or an optional visitor key.
 
 export type Provider = 'gemini' | 'openai' | 'anthropic';
 
@@ -28,7 +27,19 @@ export class AiError extends Error {
 
 const isProvider = (v: unknown): v is Provider => v === 'gemini' || v === 'openai' || v === 'anthropic';
 
-// Reads the provider, key and optional model from request headers.
+const ENV_KEYS: Record<Provider, string> = {
+  gemini: 'GEMINI_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  anthropic: 'ANTHROPIC_API_KEY',
+};
+
+// Providers the server owner has configured with a key
+export function serverProviders(): Provider[] {
+  return (Object.keys(ENV_KEYS) as Provider[]).filter((p) => (process.env[ENV_KEYS[p]] || '').trim());
+}
+
+// Visitors need no key: the server's own key is used. A visitor may optionally send their own
+// (x-ai-provider / x-ai-key / x-ai-model headers), which takes priority.
 export function readAiConfig(headers: Record<string, string | string[] | undefined>): AiConfig {
   const one = (k: string) => {
     const v = headers[k];
@@ -36,14 +47,26 @@ export function readAiConfig(headers: Record<string, string | string[] | undefin
   };
   const provider = one('x-ai-provider');
   const apiKey = one('x-ai-key');
-  if (!isProvider(provider) || !apiKey) {
-    throw new AiError('Add your AI provider and API key in Settings to continue.', 401, 'NO_API_KEY');
+  const modelHeader = one('x-ai-model');
+  const pickModel = (p: Provider, m: string) => (/^[\w.:\-/]{1,80}$/.test(m) ? m : DEFAULT_MODELS[p]);
+
+  if (isProvider(provider) && apiKey) {
+    if (apiKey.length > 300 || /\s/.test(apiKey)) {
+      throw new AiError('That API key does not look valid.', 401, 'BAD_API_KEY');
+    }
+    return { provider, apiKey, model: pickModel(provider, modelHeader) };
   }
-  if (apiKey.length > 300 || /\s/.test(apiKey)) {
-    throw new AiError('That API key does not look valid.', 401, 'BAD_API_KEY');
+
+  const available = serverProviders();
+  const wanted = (process.env.AI_PROVIDER || '').trim();
+  const chosen = isProvider(provider) && available.includes(provider) ? provider
+    : isProvider(wanted) && available.includes(wanted) ? wanted
+    : available[0];
+  if (!chosen) {
+    throw new AiError('ExpertScan is not configured yet: the site owner needs to set an AI key on the server.', 503, 'NOT_CONFIGURED');
   }
-  const model = one('x-ai-model');
-  return { provider, apiKey, model: /^[\w.:\-/]{1,80}$/.test(model) ? model : DEFAULT_MODELS[provider] };
+  const model = (process.env[`${chosen.toUpperCase()}_MODEL`] || '').trim() || modelHeader;
+  return { provider: chosen, apiKey: process.env[ENV_KEYS[chosen]]!.trim(), model: pickModel(chosen, model) };
 }
 
 async function post(url: string, headers: Record<string, string>, body: unknown): Promise<any> {

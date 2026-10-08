@@ -77,10 +77,6 @@ export default function App() {
   const handleReviewWebsites = async (nameToUse?: string) => {
     const targetName = (nameToUse || nameInput).trim();
     if (!targetName) return;
-    if (!getSettings()) {
-      setIsSettingsOpen(true);
-      return;
-    }
 
     setIsLoadingWebsites(true);
     setIsVerificationModalOpen(true);
@@ -167,10 +163,6 @@ export default function App() {
     if (e) e.preventDefault();
     const trimmed = nameInput.trim();
     if (!trimmed) return;
-    if (!getSettings()) {
-      setIsSettingsOpen(true);
-      return;
-    }
 
     // Convert custom URLs into custom candidate objects if any
     const extraWebsites: DiscoveredWebsite[] = customUrls.map((u, idx) => {
@@ -260,10 +252,10 @@ export default function App() {
             <button
               onClick={() => setIsSettingsOpen(true)}
               className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
-              title="Choose your AI provider and add your key"
+              title="Optional: use your own AI key"
             >
               <KeyRound className="w-3.5 h-3.5 text-stone-600" />
-              <span>{aiSettings ? PROVIDERS[aiSettings.provider].label : 'Add AI key'}</span>
+              <span>{aiSettings ? PROVIDERS[aiSettings.provider].label : 'AI'}</span>
             </button>
             {stage === 'report' && (
               <div className="flex items-center gap-2">

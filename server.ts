@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { AiError, readAiConfig, runModel, type AiConfig } from './ai';
+import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
 import dns from 'node:dns/promises';
@@ -55,6 +55,9 @@ async function assertPublicUrl(raw: string): Promise<void> {
   const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
   if (addrs.some(a => isPrivateIp(a.address))) throw new Error('URL resolves to a private address');
 }
+
+// Which providers the server has keys for (names only, never the keys)
+app.get('/api/config', (_req, res) => res.json({ providers: serverProviders() }));
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -142,7 +145,7 @@ app.get('/api/search-profiles', async (req, res) => {
   }
 
   let ai: AiConfig;
-  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
 
   try {
     const prompt = `Perform a live web search for the public professional footprint of "${name}"${affiliation ? ` affiliated with "${affiliation}"` : ''}${domain ? ` working in "${domain}"` : ''}.
@@ -395,7 +398,7 @@ app.post('/api/scrape-url', async (req, res) => {
   }
 
   let ai: AiConfig;
-  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
 
   try {
     const scraped = await scrapeWebsiteContent(cleanUrl, (name || '').trim(), ai);
@@ -433,7 +436,7 @@ app.post('/api/analyze-presence', async (req, res) => {
   const resolvedAffiliation = affiliation?.trim() || 'Not specified (discover from sources)';
 
   let ai: AiConfig;
-  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
 
   {
     try {

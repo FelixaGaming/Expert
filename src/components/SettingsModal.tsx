@@ -38,11 +38,11 @@ export const SettingsModal: React.FC<Props> = ({ isOpen, onClose, onSaved }) => 
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-stone-900 flex items-center gap-2">
-              <KeyRound className="w-4 h-4" /> Connect your AI
+              <KeyRound className="w-4 h-4" /> Use your own AI key (optional)
             </h2>
             <p className="text-sm text-stone-600 mt-1">
-              ExpertScan is free. It runs on your own key, so you control the cost. Your key stays in this browser and is
-              passed straight to the provider. It is never saved on our server.
+              ExpertScan works without a key. Add one only if you prefer your own OpenAI, Anthropic or Gemini account.
+              It stays in this browser and is never saved on our server.
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close" className="p-1 rounded hover:bg-stone-100 cursor-pointer">
