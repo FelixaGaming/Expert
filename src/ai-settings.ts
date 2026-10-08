@@ -11,7 +11,7 @@ export const PROVIDERS: Record<Provider, { label: string; keyUrl: string; keyHin
     label: 'Google Gemini',
     keyUrl: 'https://aistudio.google.com/apikey',
     keyHint: 'AIza…',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.8-flash',
     free: 'Has a free tier: create a key in Google AI Studio at no cost.',
   },
   openai: {

@@ -17,7 +17,7 @@ export interface AiResult {
 }
 
 export const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: 'gemini-2.5-flash',
+  gemini: 'gemini-3.8-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5',
   free: 'openai-fast',

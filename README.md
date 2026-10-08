@@ -20,7 +20,7 @@ npm run dev                  # http://localhost:3000
 
 | Provider | Default model | Web search |
 | --- | --- | --- |
-| Gemini | `gemini-2.5-flash` | Google Search grounding |
+| Gemini | `gemini-3.8-flash` | Google Search grounding |
 | OpenAI | `gpt-4o-mini` | Responses API `web_search` tool |
 | Anthropic | `claude-haiku-4-5` | `web_search` tool |
 
