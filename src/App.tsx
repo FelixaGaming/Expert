@@ -216,7 +216,7 @@ export default function App() {
       });
 
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
+      if (!response.ok || result.error) {
         throw new Error(result.error || `Server returned ${response.status}`);
       }
 

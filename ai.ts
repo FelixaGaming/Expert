@@ -1,9 +1,11 @@
 // Provider-agnostic model calls (OpenAI, Anthropic, Gemini), using the server's key or an optional visitor key.
 
 import * as cheerio from 'cheerio';
+import { spawn } from 'node:child_process';
+import os from 'node:os';
 
 // 'free' needs no key: DuckDuckGo for live search and a free no-signup model (Pollinations).
-export type Provider = 'gemini' | 'openai' | 'anthropic' | 'free';
+export type Provider = 'gemini' | 'openai' | 'anthropic' | 'free' | 'claude-cli';
 
 export interface AiConfig {
   provider: Provider;
@@ -21,6 +23,7 @@ export const DEFAULT_MODELS: Record<Provider, string> = {
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5',
   free: 'openai-fast',
+  'claude-cli': 'haiku',
 };
 
 export class AiError extends Error {
@@ -29,9 +32,9 @@ export class AiError extends Error {
   }
 }
 
-const isProvider = (v: unknown): v is Provider => v === 'gemini' || v === 'openai' || v === 'anthropic' || v === 'free';
+const isProvider = (v: unknown): v is Provider => v === 'gemini' || v === 'openai' || v === 'anthropic' || v === 'free' || v === 'claude-cli';
 
-const ENV_KEYS: Record<Exclude<Provider, 'free'>, string> = {
+const ENV_KEYS: Record<'gemini' | 'openai' | 'anthropic', string> = {
   gemini: 'GEMINI_API_KEY',
   openai: 'OPENAI_API_KEY',
   anthropic: 'ANTHROPIC_API_KEY',
@@ -39,8 +42,10 @@ const ENV_KEYS: Record<Exclude<Provider, 'free'>, string> = {
 
 // Providers the server owner has configured with a key
 export function serverProviders(): Provider[] {
-  const keyed = (Object.keys(ENV_KEYS) as Exclude<Provider, 'free'>[]).filter((p) => (process.env[ENV_KEYS[p]] || '').trim());
-  return [...keyed, 'free'];
+  const keyed = (Object.keys(ENV_KEYS) as (keyof typeof ENV_KEYS)[]).filter((p) => (process.env[ENV_KEYS[p]] || '').trim());
+  // 'claude-cli' uses the local Claude Code login: development only, enabled by AI_PROVIDER=claude-cli
+  const local: Provider[] = process.env.AI_PROVIDER === 'claude-cli' ? ['claude-cli'] : [];
+  return [...local, ...keyed, 'free'];
 }
 
 // Visitors need no key: the server's own key is used, or the keyless 'free' mode when none is set. A visitor may optionally send their own
@@ -55,7 +60,7 @@ export function readAiConfig(headers: Record<string, string | string[] | undefin
   const modelHeader = one('x-ai-model');
   const pickModel = (p: Provider, m: string) => (/^[\w.:\-/]{1,80}$/.test(m) ? m : DEFAULT_MODELS[p]);
 
-  if (isProvider(provider) && provider !== 'free' && apiKey) {
+  if (isProvider(provider) && provider !== 'free' && provider !== 'claude-cli' && apiKey) {
     if (apiKey.length > 300 || /\s/.test(apiKey)) {
       throw new AiError('That API key does not look valid.', 401, 'BAD_API_KEY');
     }
@@ -67,6 +72,7 @@ export function readAiConfig(headers: Record<string, string | string[] | undefin
   const chosen = isProvider(provider) && available.includes(provider) ? provider
     : isProvider(wanted) && available.includes(wanted) ? wanted
     : available[0];
+  if (chosen === 'claude-cli') return { provider: 'claude-cli', apiKey: '', model: pickModel('claude-cli', (process.env.CLAUDE_CLI_MODEL || '').trim()) };
   if (chosen === 'free') return { provider: 'free', apiKey: '', model: DEFAULT_MODELS.free };
   const model = (process.env[`${chosen.toUpperCase()}_MODEL`] || '').trim() || modelHeader;
   return { provider: chosen, apiKey: process.env[ENV_KEYS[chosen]]!.trim(), model: pickModel(chosen, model) };
@@ -188,9 +194,37 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
   }
 }
 
-const MODEL_FALLBACKS = ['openai-fast', 'openai'];
+// Runs the local `claude` CLI (your Claude login, no API key) Development only.
+// Claude gets NO tools: the server searches and hands it the results as text.
+async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string): Promise<AiResult> {
+  const { full: prompt, sources } = await withSearchContext(rawPrompt, search, query);
+  return new Promise((resolve, reject) => {
+    const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--permission-mode', 'dontAsk'];
+    const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 240_000);
+    child.stdout.on('data', (d) => (out += d));
+    child.stderr.on('data', (d) => (err += d));
+    child.on('error', () => { clearTimeout(timer); reject(new AiError('The `claude` command was not found on this computer.', 503, 'CLI_MISSING')); });
+    child.on('close', () => {
+      clearTimeout(timer);
+      let json: any = {};
+      try { json = JSON.parse(out); } catch { /* not JSON */ }
+      const text = typeof json.result === 'string' ? json.result : '';
+      if (json.is_error || !text) {
+        const msg = text || err || out;
+        if (/not logged in|login/i.test(msg)) return reject(new AiError('Claude is not signed in on this computer. Run `claude` in a terminal and log in.', 401, 'CLI_LOGIN'));
+        return reject(new AiError(`Claude CLI error: ${String(msg).slice(0, 160)}`, 502, 'CLI_ERROR'));
+      }
+      resolve({ text, sources });
+    });
+    child.stdin.end(prompt);
+  });
+}
 
-async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string): Promise<AiResult> {
+// Runs DuckDuckGo searches on the server and prepends the results, so a model with no web tools can still use live data.
+async function withSearchContext(prompt: string, search: boolean, query?: string) {
   let sources: { title: string; url: string }[] = [];
   let full = prompt;
   if (search && query) {
@@ -200,8 +234,15 @@ async function free(cfg: AiConfig, prompt: string, search: boolean, query?: stri
     const unique = hits.filter((h) => !seen.has(h.url) && seen.add(h.url)).slice(0, 12);
     sources = unique.map((h) => ({ title: h.title || h.url, url: h.url }));
     const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, 9000);
-    full = `LIVE WEB SEARCH RESULTS (your only source of facts; cite only URLs listed here; if the results do not support a claim, say it is not found rather than inventing it):\n\n${context || '(no results found)'}\n\n---\n${prompt}`;
+    full = `You have no browsing tools. The web search has already been done for you: the results below are live and are your only source of facts. Where the task says to search the web, use these results instead. Cite only URLs listed here. If the results do not support a claim, say it is not found rather than inventing it. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.\n\nLIVE WEB SEARCH RESULTS:\n\n${context || '(no results found)'}\n\n---\nTASK:\n${prompt}`;
   }
+  return { full, sources };
+}
+
+const MODEL_FALLBACKS = ['openai-fast', 'openai'];
+
+async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string): Promise<AiResult> {
+  const { full, sources } = await withSearchContext(prompt, search, query);
   let lastErr = '';
   for (const model of [cfg.model, ...MODEL_FALLBACKS.filter((m) => m !== cfg.model)]) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -227,7 +268,8 @@ async function free(cfg: AiConfig, prompt: string, search: boolean, query?: stri
 // Runs one prompt on the visitor's chosen provider, with live web search when `search` is true.
 export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string): Promise<AiResult> {
   const out =
-    cfg.provider === 'free' ? await free(cfg, prompt, search, query)
+    cfg.provider === 'claude-cli' ? await claudeCli(cfg, prompt, search, query)
+    : cfg.provider === 'free' ? await free(cfg, prompt, search, query)
     : cfg.provider === 'gemini' ? await gemini(cfg, prompt, search)
     : cfg.provider === 'openai' ? await openai(cfg, prompt, search)
     : await anthropic(cfg, prompt, search);

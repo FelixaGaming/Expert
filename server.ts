@@ -438,6 +438,14 @@ app.post('/api/analyze-presence', async (req, res) => {
   let ai: AiConfig;
   try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
 
+  // Reports can take minutes. Send headers now and a space every 15s so proxies and tunnels
+  // (which cut idle responses after ~100s) keep the connection open. Leading whitespace is valid JSON.
+  res.status(200).type('json');
+  res.flushHeaders();
+  const keepAlive = setInterval(() => res.write(' '), 15_000);
+  res.on('close', () => clearInterval(keepAlive));
+  const finish = (body: unknown) => { clearInterval(keepAlive); res.end(JSON.stringify(body)); };
+
   {
     try {
       const prompt = `You are ExpertScan, a public-perception analyst for experts, leaders and professionals.
@@ -999,16 +1007,18 @@ Respond strictly with a JSON object in this exact schema:
           });
         }
 
-        return res.json({ success: true, data: parsed, source: `${ai.provider}-grounded` });
+        return finish({ success: true, data: parsed, source: `${ai.provider}-grounded` });
       } catch (e) {
         console.warn('Failed to parse model JSON output:', e instanceof Error ? e.message : e);
       }
     } catch (apiError) {
-      return sendAiError(res, apiError, 'Live analysis failed. Please try again.');
+      if (apiError instanceof AiError) return finish({ error: apiError.message, code: apiError.code });
+      console.error('Analysis failed:', apiError instanceof Error ? apiError.message : apiError);
+      return finish({ error: 'Live analysis failed. Please try again.' });
     }
   }
 
-  return res.status(502).json({ error: 'Live analysis failed. Please try again.' });
+  return finish({ error: 'The model\'s report could not be read. Please try again.' });
 });
 
 
