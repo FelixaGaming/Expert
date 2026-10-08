@@ -163,7 +163,7 @@ Respond STRICTLY with one JSON object and no markdown:
   ]
 }`;
 
-    const response = await runModel(ai, prompt);
+    const response = await runModel(ai, prompt, true, [name, affiliation, domain].filter(Boolean).join(' '));
     const parsed = extractJson(response.text, '{');
 
     const websites: DiscoveredWebsite[] = (Array.isArray(parsed.websites) ? parsed.websites : [])
@@ -346,7 +346,7 @@ Respond STRICTLY with a valid JSON object in this format, with no markdown code 
   "keySignals": ["Key signal 1", "Key signal 2"]
 }`;
 
-      const aiRes = await runModel(ai, searchPrompt);
+      const aiRes = await runModel(ai, searchPrompt, true, [subjectName, targetUrl].filter(Boolean).join(' '));
 
       const text = aiRes.text;
       let cleaned = text.trim();
@@ -952,7 +952,7 @@ Respond strictly with a JSON object in this exact schema:
   }
 }`;
 
-      const response = await runModel(ai, prompt);
+      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '));
       const responseText = response.text;
       const webSources = response.sources;
 

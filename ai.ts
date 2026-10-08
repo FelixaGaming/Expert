@@ -1,6 +1,9 @@
 // Provider-agnostic model calls (OpenAI, Anthropic, Gemini), using the server's key or an optional visitor key.
 
-export type Provider = 'gemini' | 'openai' | 'anthropic';
+import * as cheerio from 'cheerio';
+
+// 'free' needs no key: DuckDuckGo for live search and a free no-signup model (Pollinations).
+export type Provider = 'gemini' | 'openai' | 'anthropic' | 'free';
 
 export interface AiConfig {
   provider: Provider;
@@ -17,6 +20,7 @@ export const DEFAULT_MODELS: Record<Provider, string> = {
   gemini: 'gemini-2.5-flash',
   openai: 'gpt-4o-mini',
   anthropic: 'claude-haiku-4-5',
+  free: 'openai-fast',
 };
 
 export class AiError extends Error {
@@ -25,9 +29,9 @@ export class AiError extends Error {
   }
 }
 
-const isProvider = (v: unknown): v is Provider => v === 'gemini' || v === 'openai' || v === 'anthropic';
+const isProvider = (v: unknown): v is Provider => v === 'gemini' || v === 'openai' || v === 'anthropic' || v === 'free';
 
-const ENV_KEYS: Record<Provider, string> = {
+const ENV_KEYS: Record<Exclude<Provider, 'free'>, string> = {
   gemini: 'GEMINI_API_KEY',
   openai: 'OPENAI_API_KEY',
   anthropic: 'ANTHROPIC_API_KEY',
@@ -35,10 +39,11 @@ const ENV_KEYS: Record<Provider, string> = {
 
 // Providers the server owner has configured with a key
 export function serverProviders(): Provider[] {
-  return (Object.keys(ENV_KEYS) as Provider[]).filter((p) => (process.env[ENV_KEYS[p]] || '').trim());
+  const keyed = (Object.keys(ENV_KEYS) as Exclude<Provider, 'free'>[]).filter((p) => (process.env[ENV_KEYS[p]] || '').trim());
+  return [...keyed, 'free'];
 }
 
-// Visitors need no key: the server's own key is used. A visitor may optionally send their own
+// Visitors need no key: the server's own key is used, or the keyless 'free' mode when none is set. A visitor may optionally send their own
 // (x-ai-provider / x-ai-key / x-ai-model headers), which takes priority.
 export function readAiConfig(headers: Record<string, string | string[] | undefined>): AiConfig {
   const one = (k: string) => {
@@ -50,7 +55,7 @@ export function readAiConfig(headers: Record<string, string | string[] | undefin
   const modelHeader = one('x-ai-model');
   const pickModel = (p: Provider, m: string) => (/^[\w.:\-/]{1,80}$/.test(m) ? m : DEFAULT_MODELS[p]);
 
-  if (isProvider(provider) && apiKey) {
+  if (isProvider(provider) && provider !== 'free' && apiKey) {
     if (apiKey.length > 300 || /\s/.test(apiKey)) {
       throw new AiError('That API key does not look valid.', 401, 'BAD_API_KEY');
     }
@@ -62,9 +67,7 @@ export function readAiConfig(headers: Record<string, string | string[] | undefin
   const chosen = isProvider(provider) && available.includes(provider) ? provider
     : isProvider(wanted) && available.includes(wanted) ? wanted
     : available[0];
-  if (!chosen) {
-    throw new AiError('ExpertScan is not configured yet: the site owner needs to set an AI key on the server.', 503, 'NOT_CONFIGURED');
-  }
+  if (chosen === 'free') return { provider: 'free', apiKey: '', model: DEFAULT_MODELS.free };
   const model = (process.env[`${chosen.toUpperCase()}_MODEL`] || '').trim() || modelHeader;
   return { provider: chosen, apiKey: process.env[ENV_KEYS[chosen]]!.trim(), model: pickModel(chosen, model) };
 }
@@ -158,10 +161,74 @@ async function anthropic(cfg: AiConfig, prompt: string, search: boolean): Promis
   return { text, sources: dedupe(sources) };
 }
 
+const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+async function duckSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
+  try {
+    const res = await fetch('https://html.duckduckgo.com/html/', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'user-agent': UA },
+      body: new URLSearchParams({ q: query }).toString(),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return [];
+    const $ = cheerio.load(await res.text());
+    const out: { title: string; url: string; snippet: string }[] = [];
+    $('.result').each((_, el) => {
+      const a = $(el).find('a.result__a').first();
+      let href = a.attr('href') || '';
+      const m = href.match(/[?&]uddg=([^&]+)/);
+      if (m) href = decodeURIComponent(m[1]);
+      if (!/^https?:\/\//i.test(href)) return;
+      out.push({ title: a.text().trim(), url: href, snippet: $(el).find('.result__snippet').text().trim() });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+const MODEL_FALLBACKS = ['openai-fast', 'openai'];
+
+async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string): Promise<AiResult> {
+  let sources: { title: string; url: string }[] = [];
+  let full = prompt;
+  if (search && query) {
+    const queries = [query, `${query} interview OR keynote OR award OR university OR podcast`];
+    const hits = (await Promise.all(queries.map(duckSearch))).flat();
+    const seen = new Set<string>();
+    const unique = hits.filter((h) => !seen.has(h.url) && seen.add(h.url)).slice(0, 12);
+    sources = unique.map((h) => ({ title: h.title || h.url, url: h.url }));
+    const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, 9000);
+    full = `LIVE WEB SEARCH RESULTS (your only source of facts; cite only URLs listed here; if the results do not support a claim, say it is not found rather than inventing it):\n\n${context || '(no results found)'}\n\n---\n${prompt}`;
+  }
+  let lastErr = '';
+  for (const model of [cfg.model, ...MODEL_FALLBACKS.filter((m) => m !== cfg.model)]) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch('https://text.pollinations.ai/openai', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ model, messages: [{ role: 'user', content: full }] }),
+          signal: AbortSignal.timeout(120_000),
+        });
+        const json: any = await res.json().catch(() => ({}));
+        const text = json?.choices?.[0]?.message?.content;
+        if (res.ok && typeof text === 'string' && text.trim()) return { text, sources: dedupe(sources) };
+        lastErr = json?.error?.message || json?.error || `status ${res.status}`;
+      } catch (e: any) {
+        lastErr = e?.message || String(e);
+      }
+    }
+  }
+  throw new AiError(`The free AI service is busy right now (${String(lastErr).slice(0, 80)}). Please try again in a minute.`, 503, 'FREE_BUSY');
+}
+
 // Runs one prompt on the visitor's chosen provider, with live web search when `search` is true.
-export async function runModel(cfg: AiConfig, prompt: string, search = true): Promise<AiResult> {
+export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string): Promise<AiResult> {
   const out =
-    cfg.provider === 'gemini' ? await gemini(cfg, prompt, search)
+    cfg.provider === 'free' ? await free(cfg, prompt, search, query)
+    : cfg.provider === 'gemini' ? await gemini(cfg, prompt, search)
     : cfg.provider === 'openai' ? await openai(cfg, prompt, search)
     : await anthropic(cfg, prompt, search);
   if (!out.text.trim()) throw new AiError('The model returned an empty response. Try again.', 502, 'EMPTY_RESPONSE');
