@@ -4,8 +4,7 @@ import dotenv from 'dotenv';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
-import dns from 'node:dns/promises';
-import net from 'node:net';
+import { assertPublicUrl } from './safe-fetch';
 
 dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
@@ -36,25 +35,6 @@ setInterval(() => {
   const now = Date.now();
   for (const [k, v] of hits) if (v.reset < now) hits.delete(k);
 }, 60_000).unref();
-
-// Block server-side requests to private/internal addresses (SSRF protection)
-function isPrivateIp(ip: string): boolean {
-  if (net.isIPv4(ip)) {
-    const [a, b] = ip.split('.').map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) ||
-      (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
-  }
-  const l = ip.toLowerCase();
-  if (l.startsWith('::ffff:')) return isPrivateIp(l.slice(7));
-  return l === '::1' || l === '::' || l.startsWith('fc') || l.startsWith('fd') || l.startsWith('fe80');
-}
-async function assertPublicUrl(raw: string): Promise<void> {
-  const u = new URL(raw);
-  if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error('Only http(s) URLs are allowed');
-  const host = u.hostname.replace(/^\[|\]$/g, '');
-  const addrs = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true });
-  if (addrs.some(a => isPrivateIp(a.address))) throw new Error('URL resolves to a private address');
-}
 
 // Which providers the server has keys for (names only, never the keys)
 app.get('/api/config', (_req, res) => res.json({ providers: serverProviders() }));
@@ -163,7 +143,7 @@ Respond STRICTLY with one JSON object and no markdown:
   ]
 }`;
 
-    const response = await runModel(ai, prompt, true, [name, affiliation, domain].filter(Boolean).join(' '));
+    const response = await runModel(ai, prompt, true, [name, affiliation, domain].filter(Boolean).join(' '), { name, affiliation, domain, depth: 'profiles' });
     const parsed = extractJson(response.text, '{');
 
     const websites: DiscoveredWebsite[] = (Array.isArray(parsed.websites) ? parsed.websites : [])
@@ -960,7 +940,7 @@ Respond strictly with a JSON object in this exact schema:
   }
 }`;
 
-      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '));
+      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), { name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), depth: 'deep' });
       const responseText = response.text;
       const webSources = response.sources;
 

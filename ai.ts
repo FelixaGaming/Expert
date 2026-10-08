@@ -2,6 +2,7 @@
 
 import * as cheerio from 'cheerio';
 import { spawn } from 'node:child_process';
+import { gatherResearch, type ResearchInput } from './research';
 import os from 'node:os';
 
 // 'free' needs no key: DuckDuckGo for live search and a free no-signup model (Pollinations).
@@ -228,14 +229,14 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 
 // Runs the local `claude` CLI (your Claude login, no API key) Development only.
 // Claude gets NO tools: the server searches and hands it the results as text.
-async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string): Promise<AiResult> {
-  const { full: prompt, sources } = await withSearchContext(rawPrompt, search, query);
+async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
+  const { full: prompt, sources } = await withSearchContext(rawPrompt, search, query, research);
   return new Promise((resolve, reject) => {
     const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 240_000);
+    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 540_000);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', () => { clearTimeout(timer); reject(new AiError('The `claude` command was not found on this computer.', 503, 'CLI_MISSING')); });
@@ -256,7 +257,14 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
 }
 
 // Runs DuckDuckGo searches on the server and prepends the results, so a model with no web tools can still use live data.
-async function withSearchContext(prompt: string, search: boolean, query?: string) {
+async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 70_000) {
+  const intro = 'You have no browsing tools. The web research has already been done for you: the material below was gathered live and is your only source of facts. Where the task says to search the web, use this material instead. Cite only URLs that appear in it. If the material does not support a claim, say it is not found rather than inventing it. The material may include namesakes (other people with the same name): use affiliation, field and location to separate them, and flag doubtful matches. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.';
+  if (search && research) {
+    const pack = await gatherResearch(research, maxChars);
+    console.log('research:', research.name, JSON.stringify(pack.stats));
+    if (!pack.sources.length) throw new AiError('Web search is temporarily unavailable. Please try again in a few minutes.', 503, 'SEARCH_UNAVAILABLE');
+    return { full: `${intro}\n\nLIVE RESEARCH MATERIAL:\n\n${pack.context}\n\n---\nTASK:\n${prompt}`, sources: pack.sources };
+  }
   let sources: { title: string; url: string }[] = [];
   let full = prompt;
   if (search && query) {
@@ -266,16 +274,16 @@ async function withSearchContext(prompt: string, search: boolean, query?: string
     const unique = hits.filter((h) => !seen.has(h.url) && seen.add(h.url)).slice(0, 12);
     if (!unique.length) throw new AiError('Web search is temporarily unavailable. Please try again in a few minutes.', 503, 'SEARCH_UNAVAILABLE');
     sources = unique.map((h) => ({ title: h.title || h.url, url: h.url }));
-    const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, 9000);
-    full = `You have no browsing tools. The web search has already been done for you: the results below are live and are your only source of facts. Where the task says to search the web, use these results instead. Cite only URLs listed here. If the results do not support a claim, say it is not found rather than inventing it. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.\n\nLIVE WEB SEARCH RESULTS:\n\n${context || '(no results found)'}\n\n---\nTASK:\n${prompt}`;
+    const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, Math.min(maxChars, 9000));
+    full = `${intro}\n\nLIVE WEB SEARCH RESULTS:\n\n${context}\n\n---\nTASK:\n${prompt}`;
   }
   return { full, sources };
 }
 
 const MODEL_FALLBACKS = ['openai-fast', 'openai'];
 
-async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string): Promise<AiResult> {
-  const { full, sources } = await withSearchContext(prompt, search, query);
+async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
+  const { full, sources } = await withSearchContext(prompt, search, query, research, 9000);
   let lastErr = '';
   for (const model of [cfg.model, ...MODEL_FALLBACKS.filter((m) => m !== cfg.model)]) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -299,10 +307,10 @@ async function free(cfg: AiConfig, prompt: string, search: boolean, query?: stri
 }
 
 // Runs one prompt on the visitor's chosen provider, with live web search when `search` is true.
-export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string): Promise<AiResult> {
+export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string, research?: ResearchInput): Promise<AiResult> {
   const out =
-    cfg.provider === 'claude-cli' ? await claudeCli(cfg, prompt, search, query)
-    : cfg.provider === 'free' ? await free(cfg, prompt, search, query)
+    cfg.provider === 'claude-cli' ? await claudeCli(cfg, prompt, search, query, research)
+    : cfg.provider === 'free' ? await free(cfg, prompt, search, query, research)
     : cfg.provider === 'gemini' ? await gemini(cfg, prompt, search)
     : cfg.provider === 'openai' ? await openai(cfg, prompt, search)
     : await anthropic(cfg, prompt, search);
