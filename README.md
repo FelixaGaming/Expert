@@ -14,7 +14,7 @@ cp .env.example .env.local   # then add your GEMINI_API_KEY
 npm run dev                  # http://localhost:3000
 ```
 
-Without a `GEMINI_API_KEY` the app still runs, using built-in demo data instead of live analysis.
+A `GEMINI_API_KEY` is required. The app contains no sample or placeholder data: every profile, fact and report comes from live search and scraping. Without a key, the API returns a clear error instead of made-up results.
 
 ## Scripts
 
@@ -29,7 +29,7 @@ Without a `GEMINI_API_KEY` the app still runs, using built-in demo data instead 
 
 | Variable | Default | Notes |
 | --- | --- | --- |
-| `GEMINI_API_KEY` | none | Required for live analysis. Server-side only, never sent to the browser. |
+| `GEMINI_API_KEY` | none | **Required.** Server-side only, never sent to the browser. |
 | `GEMINI_MODEL` | `gemini-3.8-flash` | Any Gemini model that supports Google Search grounding. |
 | `PORT` | `3000` | |
 | `RATE_LIMIT_PER_MIN` | `60` | Per-IP limit on `/api` routes. |
