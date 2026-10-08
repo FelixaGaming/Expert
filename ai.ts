@@ -169,6 +169,38 @@ async function anthropic(cfg: AiConfig, prompt: string, search: boolean): Promis
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
+async function bingSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
+  try {
+    const res = await fetch(`https://www.bing.com/search?q=${encodeURIComponent(query)}&setlang=en`, {
+      headers: { 'user-agent': UA, 'accept-language': 'en-US,en;q=0.9' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) return [];
+    const $ = cheerio.load(await res.text());
+    const out: { title: string; url: string; snippet: string }[] = [];
+    $('li.b_algo').each((_, el) => {
+      const a = $(el).find('h2 a').first();
+      let href = a.attr('href') || '';
+      // Bing wraps results in a redirect whose `u` parameter is the real URL in base64 (prefixed "a1")
+      const m = href.match(/[?&]u=a1([^&]+)/);
+      if (m) {
+        try { href = Buffer.from(m[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'); } catch { return; }
+      }
+      if (!/^https?:\/\//i.test(href)) return;
+      out.push({ title: a.text().trim(), url: href, snippet: $(el).find('p').first().text().trim() });
+    });
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+// Bing first, DuckDuckGo as a fallback: either may rate-limit a busy server
+async function webSearch(query: string) {
+  const bing = await bingSearch(query);
+  return bing.length ? bing : duckSearch(query);
+}
+
 async function duckSearch(query: string): Promise<{ title: string; url: string; snippet: string }[]> {
   try {
     const res = await fetch('https://html.duckduckgo.com/html/', {
@@ -229,9 +261,10 @@ async function withSearchContext(prompt: string, search: boolean, query?: string
   let full = prompt;
   if (search && query) {
     const queries = [query, `${query} interview OR keynote OR award OR university OR podcast`];
-    const hits = (await Promise.all(queries.map(duckSearch))).flat();
+    const hits = (await Promise.all(queries.map(webSearch))).flat();
     const seen = new Set<string>();
     const unique = hits.filter((h) => !seen.has(h.url) && seen.add(h.url)).slice(0, 12);
+    if (!unique.length) throw new AiError('Web search is temporarily unavailable. Please try again in a few minutes.', 503, 'SEARCH_UNAVAILABLE');
     sources = unique.map((h) => ({ title: h.title || h.url, url: h.url }));
     const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, 9000);
     full = `You have no browsing tools. The web search has already been done for you: the results below are live and are your only source of facts. Where the task says to search the web, use these results instead. Cite only URLs listed here. If the results do not support a claim, say it is not found rather than inventing it. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.\n\nLIVE WEB SEARCH RESULTS:\n\n${context || '(no results found)'}\n\n---\nTASK:\n${prompt}`;
