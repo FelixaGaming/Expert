@@ -166,6 +166,51 @@ Respond STRICTLY with one JSON object and no markdown:
         };
       });
 
+    // Guarantee the social platforms are represented, whatever the model kept or dropped
+    const enc = encodeURIComponent(name);
+    const PLATFORMS: { label: string; host: RegExp; profile: RegExp; search: string }[] = [
+      { label: 'LinkedIn', host: /(^|\.)linkedin\.com$/, profile: /\/(in|pub)\//, search: `https://www.linkedin.com/search/results/people/?keywords=${enc}` },
+      { label: 'Facebook', host: /(^|\.)facebook\.com$/, profile: /^\/(?!search|public|watch|groups\/?$)[^/]+/, search: `https://www.facebook.com/search/people/?q=${enc}` },
+      { label: 'Instagram', host: /(^|\.)instagram\.com$/, profile: /^\/(?!explore|p\/|reel)[^/]+/, search: `https://www.instagram.com/explore/search/keyword/?q=${enc}` },
+      { label: 'TikTok', host: /(^|\.)tiktok\.com$/, profile: /^\/@/, search: `https://www.tiktok.com/search/user?q=${enc}` },
+      { label: 'X / Twitter', host: /(^|\.)(x|twitter)\.com$/, profile: /^\/(?!search|hashtag|i\/)[^/]+$/, search: `https://x.com/search?q=${enc}&f=user` },
+      { label: 'YouTube', host: /(^|\.)youtube\.com$/, profile: /^\/(@|channel\/|c\/|user\/)/, search: `https://www.youtube.com/results?search_query=${enc}&sp=EgIQAg%253D%253D` },
+      { label: 'Discord', host: /(^|\.)discord\.(com|gg)$/, profile: /./, search: `https://www.google.com/search?q=${encodeURIComponent(`"${name}" discord`)}` },
+      { label: 'Reddit', host: /(^|\.)reddit\.com$/, profile: /^\/(user|u)\//, search: `https://www.reddit.com/search/?q=${enc}&type=user` },
+      { label: 'Google Scholar', host: /(^|\.)scholar\.google\./, profile: /citations/, search: `https://scholar.google.com/scholar?q=${enc}` },
+    ];
+    const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
+    const pathOf = (u: string) => { try { return new URL(u).pathname; } catch { return ''; } };
+    for (const pf of PLATFORMS) {
+      const alreadyListed = websites.some((w) => pf.host.test(hostOf(w.url)));
+      if (alreadyListed) continue;
+      // A profile the search engines returned but the model left out
+      const found = response.sources.find((src) => pf.host.test(hostOf(src.url)) && pf.profile.test(pathOf(src.url)));
+      if (found) {
+        websites.push({
+          id: `web-${pf.label}-found-${Date.now()}`,
+          title: found.title || `${pf.label} result for ${name}`,
+          url: found.url,
+          domain: hostOf(found.url),
+          platform: pf.label,
+          snippet: 'Found by web search. Check that it is really you before including it.',
+          isConfirmed: false,
+          associationReason: 'Found by search engines, not yet verified',
+        });
+      } else {
+        websites.push({
+          id: `web-${pf.label}-search-${Date.now()}`,
+          title: `Search ${pf.label} for ${name}`,
+          url: pf.search,
+          domain: hostOf(pf.search),
+          platform: pf.label,
+          snippet: `No ${pf.label} profile was found automatically. Open this search to look yourself, then add the profile link as a custom page.`,
+          isConfirmed: false,
+          associationReason: 'Not found automatically: manual check link',
+        });
+      }
+    }
+
     const categories: DiscoveryCategory[] = ['credentials', 'education', 'awards', 'publications', 'interviews', 'articles'];
     const grouped: Record<string, DiscoveredFactItem[]> = {};
     categories.forEach((c) => (grouped[c] = []));
