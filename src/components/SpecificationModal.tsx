@@ -15,13 +15,13 @@ export const SpecificationModal: React.FC<SpecificationModalProps> = ({ isOpen, 
         <div className="flex items-center justify-between pb-4 border-b border-stone-200">
           <div>
             <div className="text-xs font-cinzel font-bold tracking-widest text-stone-500 uppercase">
-              FELIXA EXPERTS MVP
+              EXPERTSCAN
             </div>
             <h2 className="text-xl font-serif-luxury font-semibold text-stone-900 mt-1">
               AI Build Specification v2.0
             </h2>
             <p className="text-xs text-stone-600 mt-0.5">
-              FELIXA helps bring out the best in people • Initial market: Experts • Advisors • Consultants
+              See how others see you • Initial market: Experts • Advisors • Consultants
             </p>
           </div>
           <button

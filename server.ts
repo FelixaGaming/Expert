@@ -1,7 +1,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
-import { GoogleGenAI } from '@google/genai';
+import { AiError, readAiConfig, runModel, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
 import dns from 'node:dns/promises';
@@ -11,8 +11,9 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
-const GEMINI_MODEL = process.env.GEMINI_MODEL || 'gemini-3.8-flash';
 
+// Behind Render's proxy, so per-IP rate limiting sees the real client address
+app.set('trust proxy', 1);
 app.use(express.json({ limit: '1mb' }));
 
 // Minimal in-memory rate limiter for the /api routes (per IP, per minute)
@@ -57,7 +58,7 @@ async function assertPublicUrl(raw: string): Promise<void> {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'FELIXA Behavioral Intelligence Engine', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'ExpertScan', timestamp: new Date().toISOString() });
 });
 
 export interface ScrapedWebsiteData {
@@ -123,12 +124,14 @@ function extractJson(text: string, open: '{' | '['): any {
   return JSON.parse(text.substring(first, last + 1));
 }
 
-const NO_KEY_ERROR = {
-  error: 'GEMINI_API_KEY is not configured on the server. Add it to .env.local and restart.',
-  code: 'NO_API_KEY',
-};
+// Maps AI/provider failures to a JSON response the client can show
+function sendAiError(res: express.Response, err: unknown, fallback: string) {
+  if (err instanceof AiError) return res.status(err.status).json({ error: err.message, code: err.code });
+  console.error(fallback, err instanceof Error ? err.message : err);
+  return res.status(502).json({ error: fallback });
+}
 
-// Search online profiles, associated websites and background facts (live, via Gemini + Google Search)
+// Search online profiles, associated websites and background facts (live web search via the visitor's AI provider)
 app.get('/api/search-profiles', async (req, res) => {
   const name = (req.query.name as string || '').trim();
   const affiliation = (req.query.affiliation as string || '').trim();
@@ -138,8 +141,8 @@ app.get('/api/search-profiles', async (req, res) => {
     return res.status(400).json({ error: 'Name is required to search public profiles' });
   }
 
-  const ai = getGenAI();
-  if (!ai) return res.status(503).json(NO_KEY_ERROR);
+  let ai: AiConfig;
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
 
   try {
     const prompt = `Perform a live web search for the public professional footprint of "${name}"${affiliation ? ` affiliated with "${affiliation}"` : ''}${domain ? ` working in "${domain}"` : ''}.
@@ -157,12 +160,8 @@ Respond STRICTLY with one JSON object and no markdown:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: GEMINI_MODEL,
-      contents: prompt,
-      config: { tools: [{ googleSearch: {} }] },
-    });
-    const parsed = extractJson(response.text || '', '{');
+    const response = await runModel(ai, prompt);
+    const parsed = extractJson(response.text, '{');
 
     const websites: DiscoveredWebsite[] = (Array.isArray(parsed.websites) ? parsed.websites : [])
       .filter((item: any) => item && typeof item.url === 'string' && /^https?:\/\//i.test(item.url))
@@ -214,13 +213,12 @@ Respond STRICTLY with one JSON object and no markdown:
       articles: grouped.articles,
     });
   } catch (err: any) {
-    console.error('Profile search failed:', err);
-    return res.status(502).json({ error: 'Live profile search failed', details: err?.message || String(err) });
+    return sendAiError(res, err, 'Live profile search failed. Please try again.');
   }
 });
 
 // Live Web Scraping function for LinkedIn, Facebook, and any website
-async function scrapeWebsiteContent(targetUrl: string, subjectName: string = ''): Promise<ScrapedWebsiteData> {
+async function scrapeWebsiteContent(targetUrl: string, subjectName: string = '', ai: AiConfig): Promise<ScrapedWebsiteData> {
   let domain = 'web';
   try {
     domain = new URL(targetUrl).hostname.replace(/^www\./, '');
@@ -317,17 +315,16 @@ async function scrapeWebsiteContent(targetUrl: string, subjectName: string = '')
     }
   }
 
-  // 2. For social platforms (LinkedIn, Facebook) or sparse content, use Gemini with Google Search tool to extract public posts & comments
-  const ai = getGenAI();
+  // 2. For social platforms (LinkedIn, Facebook) or sparse content, use AI web search to extract public posts & comments
   if (ai && (isLinkedIn || isFacebook || bodySnippets.length < 2)) {
     try {
-      const searchPrompt = `You are a live web scraping engine for the FELIXA Public Perception Mirror.
+      const searchPrompt = `You are a live web research engine for ExpertScan.
 The user wants to scrape live public content, profile bio, headline, and audience reactions/comments from this URL:
 Target URL: "${targetUrl}"
 Platform: "${platform}"
 ${subjectName ? `Person/Subject Name: "${subjectName}"` : ''}
 
-Use the googleSearch tool to perform targeted searches for the exact contents, public bio, posts, and audience comments of this page.
+Use web search to perform targeted searches for the exact contents, public bio, posts, and audience comments of this page.
 Extract:
 1. Exact Page Title or Professional Headline
 2. Summary / Bio excerpt
@@ -346,13 +343,9 @@ Respond STRICTLY with a valid JSON object in this format, with no markdown code 
   "keySignals": ["Key signal 1", "Key signal 2"]
 }`;
 
-      const aiRes = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: searchPrompt,
-        config: { tools: [{ googleSearch: {} }] },
-      });
+      const aiRes = await runModel(ai, searchPrompt);
 
-      const text = aiRes.text || '';
+      const text = aiRes.text;
       let cleaned = text.trim();
       const firstB = cleaned.indexOf('{');
       const lastB = cleaned.lastIndexOf('}');
@@ -368,7 +361,8 @@ Respond STRICTLY with a valid JSON object in this format, with no markdown code 
       if (Array.isArray(parsed.audienceReactions) && parsed.audienceReactions.length) audienceReactions = parsed.audienceReactions;
       if (Array.isArray(parsed.keySignals) && parsed.keySignals.length) keySignals = parsed.keySignals;
     } catch (aiErr) {
-      console.warn(`Live Gemini scrape fallback error for ${targetUrl}:`, aiErr);
+      if (aiErr instanceof AiError && aiErr.code === 'BAD_API_KEY') throw aiErr;
+      console.warn(`AI scrape fallback failed for ${targetUrl}:`, aiErr instanceof Error ? aiErr.message : aiErr);
     }
   }
 
@@ -400,26 +394,17 @@ app.post('/api/scrape-url', async (req, res) => {
     cleanUrl = `https://${cleanUrl}`;
   }
 
+  let ai: AiConfig;
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
+
   try {
-    const scraped = await scrapeWebsiteContent(cleanUrl, (name || '').trim());
+    const scraped = await scrapeWebsiteContent(cleanUrl, (name || '').trim(), ai);
     return res.json({ success: true, data: scraped });
   } catch (err: any) {
-    console.error(`Error scraping URL ${cleanUrl}:`, err);
-    return res.status(500).json({ error: 'Failed to scrape URL', details: err?.message || String(err) });
+    return sendAiError(res, err, 'Failed to scrape URL');
   }
 });
 
-
-// Initialize GoogleGenAI client lazily or when key exists
-let genAIClient: GoogleGenAI | null = null;
-function getGenAI() {
-  if (!genAIClient && process.env.GEMINI_API_KEY) {
-    genAIClient = new GoogleGenAI({
-      apiKey: process.env.GEMINI_API_KEY,
-    });
-  }
-  return genAIClient;
-}
 
 // Behavioral Intelligence Analysis Endpoint
 app.post('/api/analyze-presence', async (req, res) => {
@@ -447,20 +432,19 @@ app.post('/api/analyze-presence', async (req, res) => {
   const resolvedDomain = domain?.trim() || 'Not specified (discover from sources)';
   const resolvedAffiliation = affiliation?.trim() || 'Not specified (discover from sources)';
 
-  const ai = getGenAI();
-  if (!ai) return res.status(503).json(NO_KEY_ERROR);
+  let ai: AiConfig;
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'Missing API key'); }
 
   {
     try {
-      const prompt = `You are the FELIXA Public Perception Mirror for Experts, Leaders, and Professionals.
-FELIXA's mission is: "FELIXA helps bring out the best in people."
+      const prompt = `You are ExpertScan, a public-perception analyst for experts, leaders and professionals.
 The user wants a friendly, constructive, and accurate mirror that shows:
 "How people see you vs. how you perceive yourself."
 
 CRITICAL USER MANDATE:
 1. The user has supplied ONLY their name: "${cleanName}" ${resolvedAffiliation ? `(affiliated with "${resolvedAffiliation}")` : ''} ${resolvedDomain ? `(domain "${resolvedDomain}")` : ''}.
 2. NEVER ask questions such as "who do you think you are", and do not require any self-assessment answers from the user!
-3. Based on this name alone, use the googleSearch tool to perform an exhaustive, multi-step search across the web to discover, extract, and ground ALL of the following:
+3. Based on this name alone, use web search to perform an exhaustive, multi-step search across the web to discover, extract, and ground ALL of the following:
    - Self-Presentation & Account of What This Person Thinks of Themselves: Search across multiple online sources: social media profiles (LinkedIn "About", Facebook page bio, Twitter/X bio), podcast/video interviews, keynote transcripts, and authored articles/op-eds. Analyze how "${cleanName}" describes herself/themselves in their own words. What is their claimed mission, values, personal identity, and underlying philosophy?
    - Evaluate Comments & Public Reactions: Search and evaluate actual comments under their posts, published articles, and recorded interviews (e.g. comments on LinkedIn posts, reactions on Facebook, YouTube video comments, forum discussions). What do commenters praise? What do peers or skeptics debate? What do audience reactions reveal about public reality versus how the person described themselves?
    - Education & Schools: Search for their actual university degrees, alma maters, PhD/Master's/Bachelor's degrees, faculties, theses, and academic honors.
@@ -503,7 +487,7 @@ ${
 }
 
 RESEARCH & MIRROR SYNTHESIS MANDATE:
-1. Use the googleSearch tool to run comprehensive searches on this person:
+1. Use web search to run comprehensive searches on this person:
    - Search: "${cleanName}" "${resolvedAffiliation}"
    - Search: "${cleanName}" ${resolvedDomain}
    - Search: "${cleanName}" education university degree school thesis
@@ -965,24 +949,9 @@ Respond strictly with a JSON object in this exact schema:
   }
 }`;
 
-      const response = await ai.models.generateContent({
-        model: GEMINI_MODEL,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      });
-
-      const responseText = response.text || '';
-      
-      // Extract grounding sources if available
-      const searchChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-      const webSources = searchChunks
-        .filter((c: any) => c.web?.uri)
-        .map((c: any) => ({
-          title: c.web.title || 'Web Reference',
-          url: c.web.uri,
-        }));
+      const response = await runModel(ai, prompt);
+      const responseText = response.text;
+      const webSources = response.sources;
 
       // Clean markdown code fence and isolate JSON object
       let cleanedJson = responseText.trim();
@@ -1027,12 +996,12 @@ Respond strictly with a JSON object in this exact schema:
           });
         }
 
-        return res.json({ success: true, data: parsed, source: 'gemini-grounded' });
+        return res.json({ success: true, data: parsed, source: `${ai.provider}-grounded` });
       } catch (e) {
-        console.warn('Failed to parse Gemini JSON output, falling back to structured synthesis:', e);
+        console.warn('Failed to parse model JSON output:', e instanceof Error ? e.message : e);
       }
     } catch (apiError) {
-      console.error('Gemini API call error:', apiError);
+      return sendAiError(res, apiError, 'Live analysis failed. Please try again.');
     }
   }
 
@@ -1057,7 +1026,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`FELIXA Experts MVP Server running on port ${PORT}`);
+    console.log(`ExpertScan server running on port ${PORT}`);
   });
 }
 

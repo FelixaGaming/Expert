@@ -16,7 +16,7 @@ export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onCl
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-stone-900" />
             <h2 className="text-lg font-serif-luxury font-semibold text-stone-950">
-              FELIXA Behavioral Intelligence Methodology
+              ExpertScan Methodology
             </h2>
           </div>
           <button
@@ -34,7 +34,7 @@ export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onCl
               1. The Perceptual Mirror ("The Way Others See You")
             </h3>
             <p>
-              Subject matter experts frequently suffer from the <em>"Curse of Knowledge"</em> and the <em>"Expert's Dilemma"</em>: they evaluate themselves based on internal depth and intent, whereas prospective enterprise clients, journalists, and event organizers form decisive impressions in the first 60 seconds of examining their digital presence. FELIXA analyzes this exact delta.
+              Subject matter experts frequently suffer from the <em>"Curse of Knowledge"</em> and the <em>"Expert's Dilemma"</em>: they evaluate themselves based on internal depth and intent, whereas prospective enterprise clients, journalists, and event organizers form decisive impressions in the first 60 seconds of examining their digital presence. ExpertScan analyzes this exact delta.
             </p>
           </div>
 
@@ -61,7 +61,7 @@ export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onCl
               3. Web Grounding & Digital Authority Signals
             </h3>
             <p>
-              Our automated engine analyzes public web presence via Google Search grounding. It measures third-party citations, earned media, podcast appearances, and unified thesis communication.
+              Our automated engine analyzes public web presence via live web search through your chosen AI provider. It measures third-party citations, earned media, podcast appearances, and unified thesis communication.
             </p>
           </div>
 

@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ResearchingScreen } from './components/ResearchingScreen';
 import { ReportView } from './components/ReportView';
+import { SettingsModal } from './components/SettingsModal';
+import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
 import { ExpertProfileInput, BehavioralReportData, DiscoveredWebsite } from './types';
 import {
@@ -22,9 +24,12 @@ import {
   Trash2,
   ExternalLink,
   Loader2,
+  KeyRound,
 } from 'lucide-react';
 
 export default function App() {
+  const [aiSettings, setAiSettings] = useState<AiSettings | null>(getSettings());
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [stage, setStage] = useState<'search' | 'researching' | 'report'>('search');
   const [nameInput, setNameInput] = useState('');
   const [affiliationInput, setAffiliationInput] = useState('');
@@ -72,6 +77,10 @@ export default function App() {
   const handleReviewWebsites = async (nameToUse?: string) => {
     const targetName = (nameToUse || nameInput).trim();
     if (!targetName) return;
+    if (!getSettings()) {
+      setIsSettingsOpen(true);
+      return;
+    }
 
     setIsLoadingWebsites(true);
     setIsVerificationModalOpen(true);
@@ -82,7 +91,7 @@ export default function App() {
         affiliation: affiliationInput.trim(),
         domain: domainInput.trim(),
       });
-      const res = await fetch(`/api/search-profiles?${params.toString()}`);
+      const res = await fetch(`/api/search-profiles?${params.toString()}`, { headers: aiHeaders() });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setErrorMsg(body.error || `Profile search failed (${res.status})`);
@@ -158,6 +167,10 @@ export default function App() {
     if (e) e.preventDefault();
     const trimmed = nameInput.trim();
     if (!trimmed) return;
+    if (!getSettings()) {
+      setIsSettingsOpen(true);
+      return;
+    }
 
     // Convert custom URLs into custom candidate objects if any
     const extraWebsites: DiscoveredWebsite[] = customUrls.map((u, idx) => {
@@ -206,7 +219,7 @@ export default function App() {
     try {
       const response = await fetch('/api/analyze-presence', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
         body: JSON.stringify(input),
       });
 
@@ -235,18 +248,23 @@ export default function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="font-cinzel text-xl font-bold tracking-widest text-stone-950">
-              FELIXA
+              ExpertScan
             </span>
             <span className="h-4 w-px bg-stone-300 hidden sm:inline-block" />
             <span className="text-xs font-mono-code text-stone-500 uppercase tracking-wider hidden sm:inline-block">
-              Experts MVP • Behavioral Intelligence
+              Public perception for experts
             </span>
           </div>
 
           <div className="flex items-center gap-3 text-xs font-mono-code">
-            <span className="hidden md:inline text-stone-500">
-              &ldquo;FELIXA helps bring out the best in people.&rdquo;
-            </span>
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="px-3 py-1.5 bg-white border border-stone-300 hover:bg-stone-50 text-stone-800 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Choose your AI provider and add your key"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-stone-600" />
+              <span>{aiSettings ? PROVIDERS[aiSettings.provider].label : 'Add AI key'}</span>
+            </button>
             {stage === 'report' && (
               <div className="flex items-center gap-2">
                 <button
@@ -286,7 +304,7 @@ export default function App() {
             </h1>
 
             <p className="text-base sm:text-lg text-stone-600 max-w-2xl mx-auto mb-8 leading-relaxed font-sans">
-              Enter your name alone. FELIXA performs a deep web search and scrapes verified profiles (LinkedIn, Facebook, personal sites) to hold up an honest mirror: how people see you versus how you present yourself.
+              Enter your name alone. ExpertScan performs a deep web search and scrapes verified profiles (LinkedIn, Facebook, personal sites) to hold up an honest mirror: how people see you versus how you present yourself.
             </p>
 
             {/* Deep Search Input Card */}
@@ -411,7 +429,7 @@ export default function App() {
                           type="text"
                           value={affiliationInput}
                           onChange={(e) => setAffiliationInput(e.target.value)}
-                          placeholder="e.g. Felixa, Microsoft, Harvard..."
+                          placeholder="e.g. Microsoft, Harvard..."
                           className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900 focus:bg-white"
                         />
                       </div>
@@ -509,6 +527,8 @@ export default function App() {
           />
         )}
       </main>
+
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSaved={setAiSettings} />
 
       {/* Website Verification & Live Preview Modal */}
       <WebsiteVerificationModal

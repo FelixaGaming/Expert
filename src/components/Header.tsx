@@ -12,15 +12,15 @@ export const Header: React.FC<HeaderProps> = ({ onShowPrinciples }) => {
         {/* Brand */}
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-lg bg-stone-900 text-stone-50 flex items-center justify-center font-cinzel font-bold text-sm tracking-widest shadow-xs">
-            F
+            E
           </div>
           <div>
             <div className="flex items-center gap-2">
               <span className="font-cinzel font-bold text-base tracking-widest text-stone-950">
-                FELIXA
+                ExpertScan
               </span>
               <span className="text-[10px] font-mono-code font-semibold uppercase px-1.5 py-0.5 bg-stone-100 text-stone-700 rounded border border-stone-300/70">
-                EXPERTS MVP
+                BETA
               </span>
             </div>
             <div className="text-[11px] text-stone-500 font-sans -mt-0.5 hidden sm:block">

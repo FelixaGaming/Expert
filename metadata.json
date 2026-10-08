@@ -1,6 +1,6 @@
 {
-  "name": "FELIXA Experts MVP",
+  "name": "ExpertScan",
   "description": "Automated behavioral intelligence and public perception analytics for experts, advisors, and consultants to see themselves the way others see them and shape presence, PR, and revenue.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": ["MAJOR_CAPABILITY_BRING_YOUR_OWN_AI_KEY"]
 }

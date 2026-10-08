@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { aiHeaders } from '../ai-settings';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -129,7 +130,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
     try {
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
         body: JSON.stringify({ url: site.url, name: expertName }),
       });
       if (res.ok) {
@@ -182,7 +183,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
     try {
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
         body: JSON.stringify({ url: cleanUrl, name: expertName }),
       });
       if (res.ok) {

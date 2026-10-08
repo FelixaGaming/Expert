@@ -87,7 +87,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(report, null, 2));
     const downloadAnchor = document.createElement('a');
     downloadAnchor.setAttribute('href', dataStr);
-    downloadAnchor.setAttribute('download', `FELIXA_Perception_Mirror_Report_${report.subjectName.replace(/\s+/g, '_')}.json`);
+    downloadAnchor.setAttribute('download', `ExpertScan_Report_${report.subjectName.replace(/\s+/g, '_')}.json`);
     document.body.appendChild(downloadAnchor);
     downloadAnchor.click();
     downloadAnchor.remove();
@@ -276,7 +276,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div>
               <div className="text-xs font-cinzel font-bold tracking-widest text-stone-500 uppercase mb-1.5">
-                FELIXA • The Public Perception Mirror & Behavioral Intelligence Profile
+                ExpertScan • Public Perception Profile
               </div>
               <h1 className="text-3xl sm:text-4xl font-serif-luxury font-semibold text-stone-950 tracking-tight">
                 {report.subjectName}
@@ -2000,10 +2000,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
         {/* Document Footer */}
         <footer className="pt-6 border-t border-stone-200 flex flex-col sm:flex-row items-center justify-between text-xs font-mono-code text-stone-500 gap-3">
           <div>
-            FELIXA EXPERTS • The Public Perception Mirror & Behavioral Intelligence Profile
+            ExpertScan • Public Perception Profile
           </div>
           <div>
-            FELIXA helps bring out the best in people.
+            See yourself the way others see you.
           </div>
         </footer>
       </div>

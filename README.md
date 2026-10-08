@@ -1,20 +1,29 @@
-# FELIXA Experts MVP
+# ExpertScan
 
-Automated behavioral intelligence and public-perception analytics for experts, advisors and consultants: see yourself the way others see you, and shape your presence, PR and revenue.
+See yourself the way others see you. Enter a name; ExpertScan finds public profiles, lets you confirm which are really yours, reads them, and writes a perception report: archetype, outer impression, perception gaps and recommendations.
 
-Enter a name and a few details. The app discovers public profiles, lets you verify which are really yours, scrapes them, and uses Gemini (with Google Search grounding) to produce a perception report: archetype, outer impression, perception gaps, and recommendations.
+**Free to use.** There is no server-side AI key and no paid plan. Each visitor connects their own **OpenAI**, **Anthropic** or **Google Gemini** key in Settings. The key stays in the browser, is sent with each request, is forwarded to the provider and is never stored or logged on the server. Gemini offers a free tier through [Google AI Studio](https://aistudio.google.com/apikey).
 
-## Quick start
+Every profile, fact and report comes from live web search and scraping. The app contains no sample data.
+
+## Run locally
 
 Requires Node.js 20+.
 
 ```bash
 npm install
-cp .env.example .env.local   # then add your GEMINI_API_KEY
-npm run dev                  # http://localhost:3000
+npm run dev   # http://localhost:3000
 ```
 
-A `GEMINI_API_KEY` is required. The app contains no sample or placeholder data: every profile, fact and report comes from live search and scraping. Without a key, the API returns a clear error instead of made-up results.
+## Providers
+
+| Provider | Default model | Web search |
+| --- | --- | --- |
+| Gemini | `gemini-2.5-flash` | Google Search grounding |
+| OpenAI | `gpt-4o-mini` | Responses API `web_search` tool |
+| Anthropic | `claude-haiku-4-5` | `web_search` tool |
+
+Visitors can override the model in Settings. Web search must be available on the visitor's account.
 
 ## Scripts
 
@@ -22,29 +31,18 @@ A `GEMINI_API_KEY` is required. The app contains no sample or placeholder data: 
 | --- | --- |
 | `npm run dev` | Express + Vite dev server |
 | `npm run build` | Build the client and bundle the server into `dist/` |
-| `npm start` | Run the production build (`NODE_ENV=production`) |
+| `npm start` | Run the production build |
 | `npm run typecheck` | TypeScript check |
 
-## Configuration
+## Deploy on Render (free)
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | none | **Required.** Server-side only, never sent to the browser. |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | Any Gemini model that supports Google Search grounding. |
-| `PORT` | `3000` | |
-| `RATE_LIMIT_PER_MIN` | `60` | Per-IP limit on `/api` routes. |
+1. Push this repo to GitHub.
+2. On [render.com](https://render.com): **New → Blueprint**, select the repo. `render.yaml` sets up the free web service.
+3. Open the URL Render gives you. The free tier sleeps when idle, so the first load can take about a minute.
 
-## Production
+No environment variables are required. Optional: `RATE_LIMIT_PER_MIN` (default 60 per IP).
 
-```bash
-npm run build
-GEMINI_API_KEY=... npm start
-```
+## Safety notes
 
-## Privacy and responsible use
-
-The app searches and scrapes public information about named individuals. Use it on yourself or with the subject's consent, and comply with the terms of the sites involved and applicable privacy law. The scraper refuses requests to private/internal network addresses.
-
-## License
-
-MIT
+- Server-side fetches block private and internal addresses (SSRF protection).
+- `/api` routes are rate limited per IP.

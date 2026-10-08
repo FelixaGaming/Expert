@@ -7,7 +7,7 @@ interface ResearchingScreenProps {
 }
 
 const STEPS = [
-  'Initializing FELIXA Public Perception Mirror...',
+  'Starting ExpertScan...',
   'Reflecting longitudinal presence & evolution throughout the years...',
   'Gathering audience reactions & comments on LinkedIn, FB, and community discussions...',
   'Evaluating schools, degrees, work milestones, awards & challenges...',
