@@ -7,7 +7,7 @@ import * as cheerio from 'cheerio';
 import dns from 'node:dns/promises';
 import net from 'node:net';
 
-dotenv.config();
+dotenv.config({ path: ['.env.local', '.env'], quiet: true });
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
