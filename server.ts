@@ -982,6 +982,22 @@ Respond strictly with a JSON object in this exact schema:
         const parsed = JSON.parse(cleanedJson);
         parsed.webSources = webSources;
 
+        // Models sometimes omit sections: make sure the lists and numbers the page reads always exist
+        for (const key of ['dimensions', 'deepExcavation', 'disclosedSources', 'virtualPresenceMatrix', 'discoveredFootprint', 'prAndVisibilityGaps', 'timeline']) {
+          if (!Array.isArray(parsed[key])) parsed[key] = [];
+        }
+        const sd = parsed.sentimentDistribution && typeof parsed.sentimentDistribution === 'object' ? parsed.sentimentDistribution : {};
+        parsed.sentimentDistribution = {
+          positiveEndorsement: Number(sd.positiveEndorsement) || 0,
+          neutralInformational: Number(sd.neutralInformational) || 0,
+          criticalChallenging: Number(sd.criticalChallenging) || 0,
+          unindexedExpertise: Number(sd.unindexedExpertise) || 0,
+        };
+        parsed.overallPresenceQuotient = Number(parsed.overallPresenceQuotient) || 0;
+        if (!parsed.deepMirrorReflection || typeof parsed.deepMirrorReflection !== 'object') {
+          return finish({ error: 'The report came back incomplete. Please run the search again.' });
+        }
+
         // If parsed disclosedSources is empty or missing, populate from webSources and discoveredFootprint
         if (!parsed.disclosedSources || parsed.disclosedSources.length === 0) {
           parsed.disclosedSources = webSources.map((ws: any, idx: number) => {

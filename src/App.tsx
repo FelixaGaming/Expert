@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ResearchingScreen } from './components/ResearchingScreen';
 import { ReportView } from './components/ReportView';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { SettingsModal } from './components/SettingsModal';
 import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
@@ -512,11 +513,13 @@ export default function App() {
         )}
 
         {stage === 'report' && reportData && (
-          <ReportView
-            report={reportData}
-            onRetake={handleResetToSearch}
-            onManageSources={() => handleReviewWebsites(reportData.subjectName)}
-          />
+          <ErrorBoundary onReset={handleResetToSearch}>
+            <ReportView
+              report={reportData}
+              onRetake={handleResetToSearch}
+              onManageSources={() => handleReviewWebsites(reportData.subjectName)}
+            />
+          </ErrorBoundary>
         )}
       </main>
 
