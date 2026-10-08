@@ -70,6 +70,7 @@ interface DiscoveredWebsite {
   isConfirmed: boolean;
   associationReason: string;
   isPotentialCollision?: boolean;
+  needsReview?: boolean;
   isCustomAdded?: boolean;
   scrapedData?: ScrapedWebsiteData;
 }
@@ -193,8 +194,9 @@ Respond STRICTLY with one JSON object and no markdown:
           url: found.url,
           domain: hostOf(found.url),
           platform: pf.label,
-          snippet: 'Found by web search. Check that it is really you before including it.',
-          isConfirmed: false,
+          snippet: 'Found by web search on this platform.',
+          isConfirmed: true,
+          needsReview: true,
           associationReason: 'Found by search engines, not yet verified',
         });
       } else {
@@ -209,6 +211,11 @@ Respond STRICTLY with one JSON object and no markdown:
           associationReason: 'Not found automatically: manual check link',
         });
       }
+    }
+
+    // Every social profile is added for the user to review, since people share names
+    for (const w of websites) {
+      if (PLATFORMS.some((pf) => pf.label !== 'Google Scholar' && pf.host.test(hostOf(w.url))) && !w.id.includes('-search-')) w.needsReview = true;
     }
 
     const categories: DiscoveryCategory[] = ['credentials', 'education', 'awards', 'publications', 'interviews', 'articles'];

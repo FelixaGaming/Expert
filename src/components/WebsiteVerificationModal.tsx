@@ -565,6 +565,19 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
                         </div>
                       )}
 
+                      {/* Found on a social platform: user should confirm it is really them */}
+                      {site.needsReview && !site.isPotentialCollision && (
+                        <div className="p-2.5 bg-sky-50/90 border border-sky-300/80 rounded-lg text-xs text-sky-900 flex items-start gap-2 mb-2">
+                          <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-semibold uppercase tracking-wider font-mono-code text-[10px] text-sky-800 block">
+                              Needs your review:
+                            </span>
+                            <span>Found automatically. Open it and untick it if it is not you.</span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Bottom action row with Preview button */}
                       <div className="flex flex-wrap items-center justify-between pt-2 border-t border-stone-200/50 text-[11px] font-mono-code gap-2">
                         <div className="flex items-center gap-2">

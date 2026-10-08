@@ -300,6 +300,7 @@ export interface DiscoveredWebsite {
   isConfirmed: boolean;
   associationReason: string;
   isPotentialCollision?: boolean;
+  needsReview?: boolean; // found automatically on a social platform: the user should check it is really them
   isCustomAdded?: boolean;
   scrapedData?: ScrapedWebsiteData;
 }
