@@ -4,14 +4,25 @@
 import * as cheerio from 'cheerio';
 import dns from 'node:dns/promises';
 import { safeFetchText } from './safe-fetch';
+import type { SourceRecord } from './report-types';
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
+export interface SeedPage {
+  url: string;
+  title?: string;
+  platform?: string;
+  scraped?: string; // text the page-check window already read
+}
 
 export interface ResearchInput {
   name: string;
   affiliation?: string;
   domain?: string;
+  seeds?: SeedPage[]; // pages the user confirmed: read first
+  excludeUrls?: string[]; // pages the user said belong to someone else
+  field?: string; // area of expertise, used to look for peers
   // 'profiles' skips reading full pages so the profile list comes back faster
   depth?: 'profiles' | 'deep';
 }
@@ -31,6 +42,8 @@ export interface ResearchCoverage {
 }
 
 export interface ResearchPack {
+  register: SourceRecord[];
+  corpus: Record<string, string>; // source id -> full text used for checking quotes
   coverage: ResearchCoverage;
   context: string;
   sources: { title: string; url: string }[];
@@ -459,15 +472,41 @@ async function readPages(urls: string[], name: string): Promise<{ texts: string[
   return { texts: rows.filter(Boolean), socials };
 }
 
+// ---------- Peers (comparable experts) ----------
+
+async function authorTopics(name: string): Promise<string[]> {
+  const j = await getJson(`https://api.openalex.org/authors?search=${encodeURIComponent(name)}&per-page=3`);
+  const a = (j?.results || []).find((x: any) => sameName(x.display_name || '', name));
+  return (a?.topics || []).slice(0, 3).map((t: any) => t.display_name as string).filter(Boolean);
+}
+
+async function peerHits(field: string): Promise<RawHit[]> {
+  const queries = [`leading experts in ${field}`, `top ${field} consultants speakers researchers`];
+  const out: RawHit[] = [];
+  for (const query of queries) {
+    for (const engine of ENGINES) {
+      const r = await engine.run(query);
+      out.push(...r);
+      if (r.length) break;
+    }
+  }
+  return out;
+}
+
 // ---------- Orchestration ----------
+
+const normUrl = (u: string) => u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/^twitter\.com/, 'x.com');
 
 export async function gatherResearch(input: ResearchInput, maxChars = 70_000): Promise<ResearchPack> {
   const { name, affiliation, domain } = input;
   const deep = input.depth !== 'profiles';
   const q = `"${name}"`;
   const extra = [affiliation, domain].filter(Boolean).join(' ');
+  const excluded = new Set((input.excludeUrls || []).map(normUrl));
+  const isExcluded = (u: string) => excluded.has(normUrl(u));
 
-  // Few, well-chosen queries: scraped engines throttle bursts, and a throttled engine returns junk
+  // Search engines throttle bursts and, when they do, ignore topic words and return the same pages.
+  // Queries scoped with site: stay reliable, so each topic is covered by a group of sites.
   const queries = [
     q,
     ...(extra ? [`${q} ${extra}`] : []),
@@ -475,18 +514,27 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     `${q} site:linkedin.com/in`,
     `${q} site:facebook.com`,
     `${q} site:instagram.com OR site:tiktok.com`,
-    `${q} site:youtube.com`,
+    `${q} site:youtube.com OR site:vimeo.com OR site:spotify.com OR site:podcasts.apple.com`,
     `${q} site:x.com OR site:twitter.com OR site:threads.net`,
-    `${q} discord OR site:discord.com OR site:discord.gg`,
+    `${q} site:discord.com OR site:discord.gg`,
     `${q} site:reddit.com OR site:quora.com`,
-    // Academic, press and reputation
-    `${q} site:scholar.google.com OR site:researchgate.net`,
-    `${q} interview podcast keynote`,
-    `${q} award university education`,
-    ...(deep ? [`${q} reviews testimonials`, `${q} news`] : []),
+    // Research and education
+    `${q} site:scholar.google.com OR site:researchgate.net OR site:academia.edu OR site:orcid.org OR site:semanticscholar.org OR site:pubmed.ncbi.nlm.nih.gov OR site:arxiv.org`,
+    `${q} site:edu`,
+    ...(deep
+      ? [
+          // Speaking, press, business, directories, reviews
+          `${q} site:eventbrite.com OR site:meetup.com OR site:slideshare.net OR site:sessionize.com OR site:ted.com`,
+          `${q} site:medium.com OR site:substack.com OR site:forbes.com OR site:businessinsider.com OR site:theguardian.com`,
+          `${q} site:crunchbase.com OR site:bloomberg.com OR site:opencorporates.com OR site:patents.google.com`,
+          `${q} site:psychologytoday.com OR site:healthgrades.com OR site:doximity.com OR site:avvo.com OR site:clutch.co`,
+          `${q} site:trustpilot.com OR site:glassdoor.com OR site:yelp.com`,
+          `${q} site:org OR site:gov`,
+        ]
+      : []),
   ];
 
-  const plain = new Set<string>([q, ...(extra ? [`${q} ${extra}`] : [])]);
+  const plain = new Set<string>([q]);
   const jobs: { engine: (typeof ENGINES)[number]; query: string }[] = queries.flatMap((query) => ENGINES.map((engine) => ({ engine, query })));
   const hitMap = new Map<string, Hit>();
   let engineFailures = 0;
@@ -503,6 +551,13 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const structured = Promise.all([
     wikipedia(name), openAlex(name, affiliation), orcid(name), semanticScholar(name), crossref(name), github(name), googleNews(name), candidateDomains(name),
   ]);
+
+  const fieldPromise = (async () => {
+    if (!deep) return '';
+    if (input.field?.trim()) return input.field.trim();
+    if (domain?.trim()) return domain.trim();
+    return (await authorTopics(name)).join(' ');
+  })().catch(() => '');
 
   await pool(jobs, 6, async ({ engine, query }) => {
     let results = await engine.run(query);
@@ -527,7 +582,8 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     if (results.length) rec.ok++; else rec.empty++;
     if (!results.length) engineFailures++;
     for (const r of results) {
-      const key = r.url.replace(/[?#].*$/, '').replace(/\/$/, '').toLowerCase();
+      if (isExcluded(r.url)) continue;
+      const key = normUrl(r.url);
       const existing = hitMap.get(key);
       if (existing) {
         existing.engines.add(engine.name);
@@ -542,46 +598,52 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const lastToken = tokens[tokens.length - 1] || '';
   const score = (h: Hit) => {
     const hay = `${h.title} ${h.snippet} ${h.url}`.toLowerCase();
-    let s = h.engines.size * 2;
-    if (tokens.every((t) => hay.includes(t))) s += 4;
-    else if (lastToken && hay.includes(lastToken)) s += 1;
-    else s -= 5;
-    if (affiliation && hay.includes(affiliation.toLowerCase().split(' ')[0])) s += 2;
-    return s;
+    let sc = h.engines.size * 2;
+    if (tokens.every((t) => hay.includes(t))) sc += 4;
+    else if (lastToken && hay.includes(lastToken)) sc += 1;
+    else sc -= 5;
+    if (affiliation && hay.includes(affiliation.toLowerCase().split(' ')[0])) sc += 2;
+    return sc;
   };
   const hits = [...hitMap.values()].filter((h) => score(h) > 0).sort((a, b) => score(b) - score(a)).slice(0, 60);
 
   const [wiki, oa, orc, ss, cr, gh, news, domains] = await structured;
   const yt = await youtubeInfo(hits.map((h) => h.url));
+  const field = await fieldPromise;
 
-  // Read the top pages (own sites, bios, directories) for their text and for links to social profiles
-  let pages: string[] = [];
-  const pageSocials: SocialLink[] = [];
-  {
-    const seen = new Set<string>();
-    const toRead = hits
+  // Read the user's confirmed pages first, then the best other pages
+  const seeds = (input.seeds || []).filter((s) => s.url && !isExcluded(s.url));
+  const seedUrls = new Set(seeds.map((s) => normUrl(s.url)));
+  const seenHosts = new Set<string>();
+  const toRead = [
+    ...seeds.filter((s) => !UNREADABLE.test(new URL(s.url).hostname.replace(/^www\./, ''))).map((s) => s.url),
+    ...hits
       .filter((h) => {
         let host = '';
         try { host = new URL(h.url).hostname.replace(/^www\./, ''); } catch { return false; }
-        if (UNREADABLE.test(host) || seen.has(host)) return false;
-        seen.add(host);
+        if (UNREADABLE.test(host) || seenHosts.has(host) || seedUrls.has(normUrl(h.url))) return false;
+        seenHosts.add(host);
         return true;
       })
-      .slice(0, deep ? 10 : 6)
-      .map((h) => h.url);
-    const read = await readPages([...toRead, ...domains.sources.map((d) => d.url)], name);
-    if (deep) pages = read.texts;
-    pageSocials.push(...read.socials);
+      .slice(0, deep ? 14 : 6)
+      .map((h) => h.url),
+    ...domains.sources.map((d) => d.url),
+  ];
+  const read = await readPages([...new Set(toRead)], name);
+  const pageSocials = read.socials;
+
+  // Peers: who else works in this field (never the person themself)
+  let peers: RawHit[] = [];
+  if (deep && field) {
+    peers = (await peerHits(field)).filter((h) => !sameName(`${h.title} ${h.snippet}`, name)).slice(0, 12);
   }
 
-  // Merge every social profile found, strongest evidence first, no duplicates, at most 3 per platform
+  // Social profiles: strongest evidence first, no duplicates, at most 3 per platform
   const fromHits: SocialLink[] = hits.flatMap((h) => {
     const c = classifySocial(h.url);
     const hay = `${h.title} ${h.snippet} ${h.url}`.toLowerCase();
     return c && tokens.every((t) => hay.includes(t)) ? [{ ...c, evidence: `Search result: ${h.title}` }] : [];
   });
-  // Links gathered from articles and directories often point at the publisher's own accounts.
-  // Keep one only if the account name resembles the person's name.
   const first = tokens[0] || '';
   const resemblesPerson = (l: SocialLink) => {
     const handle = decodeURIComponent(l.url.replace(/^https?:\/\/[^/]+\//, '')).toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -590,65 +652,121 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const discovered = await socialDiscovery;
   const trusted = discovered.filter((l) => /^Listed on Wikidata|^YouTube channel search|^Bluesky search/.test(l.evidence));
   const loose = [...discovered.filter((l) => !trusted.includes(l)), ...pageSocials].filter(resemblesPerson);
-  const ranked = [...trusted, ...fromHits, ...loose];
   const seenSocial = new Set<string>();
   const perPlatform: Record<string, number> = {};
-  const socials = ranked.filter((l) => {
-    const key = l.url.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/^twitter\.com/, 'x.com');
-    if (seenSocial.has(key) || (perPlatform[l.platform] || 0) >= 3) return false;
+  const socials = [...trusted, ...fromHits, ...loose].filter((l) => {
+    const key = normUrl(l.url);
+    if (isExcluded(l.url) || seenSocial.has(key) || (perPlatform[l.platform] || 0) >= 3) return false;
     seenSocial.add(key);
     perPlatform[l.platform] = (perPlatform[l.platform] || 0) + 1;
     return true;
   });
 
-  const sections: string[] = [];
-  sections.push(`SEARCH HITS (${hits.length}, ranked by relevance and by how many engines returned them):\n` +
-    hits.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\nFound by: ${[...h.engines].join(', ')}\n${h.snippet}`).join('\n\n'));
-  if (wiki.length) sections.push(`ENCYCLOPEDIA:\n${wiki.join('\n')}`);
-  const academic = [...oa, ...orc, ...ss, ...cr];
-  if (academic.length) sections.push(`SCHOLARLY RECORDS (OpenAlex, ORCID, Semantic Scholar, Crossref; Google Scholar profiles appear in the search hits when public):\n${academic.join('\n')}`);
-  if (news.lines.length) sections.push(`NEWS COVERAGE (Google News):\n${news.lines.join('\n')}`);
-  if (yt.length) sections.push(`YOUTUBE:\n${yt.join('\n')}`);
-  if (gh.length) sections.push(`CODE PROFILES:\n${gh.join('\n')}`);
-  if (domains.lines.length) sections.push(`DOMAINS NAMED AFTER THE PERSON:\n${domains.lines.join('\n')}`);
-  if (socials.length) sections.push(`SOCIAL PROFILE LINKS FOUND (each with the evidence it came from; verify before trusting, people share names):\n${socials.map((l) => `${l.platform}: ${l.url} | ${l.evidence}`).join('\n')}`);
-  if (pages.length) sections.push(`FULL PAGE EXCERPTS:\n${pages.join('\n\n')}`);
+  // ---------- Source register: every fact the model may use gets a numbered source ----------
+  const register: SourceRecord[] = [];
+  const corpus: Record<string, string> = {};
+  const idByUrl = new Map<string, string>();
+  const accessedAt = new Date().toISOString().slice(0, 10);
+  const ownHosts = new Set<string>();
+  const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, '').toLowerCase(); } catch { return ''; } };
+  const OWN_PLATFORM = /personal|corporate|practice|professional website|github pages|portfolio|own website|company website/i;
+  for (const sd of seeds) if (OWN_PLATFORM.test(sd.platform || '')) ownHosts.add(hostOf(sd.url));
+  for (const d of domains.sources) ownHosts.add(hostOf(d.url));
+  const hostNamesPerson = (u: string) => { const h = hostOf(u).replace(/[^a-z]/g, ''); return !!lastToken && lastToken.length >= 4 && h.includes(lastToken); };
+  const ownSocial = new Set(socials.filter(resemblesPerson).map((l) => normUrl(l.url)));
+
+  const add = (kind: string, url: string, title: string, text: string, opts: { published?: string; flags?: string[]; selfAuthored?: boolean } = {}) => {
+    if (!url || isExcluded(url)) return;
+    const key = normUrl(url);
+    const clipped = text.slice(0, kind === 'page' || kind === 'your confirmed page' ? 2600 : 600);
+    const existing = idByUrl.get(key);
+    if (existing) {
+      if (!corpus[existing].includes(clipped.slice(0, 80))) corpus[existing] += `\n${clipped}`.slice(0, 3200);
+      const rec = register.find((r) => r.id === existing)!;
+      if ((kind === 'page' || kind === 'your confirmed page') && rec.kind === 'search result') {
+        rec.kind = kind;
+        rec.flags = rec.flags.filter((f) => f !== 'Only a search snippet: the page itself was not read');
+      }
+      rec.excerpt = corpus[existing].slice(0, 400);
+      return;
+    }
+    const id = `S${register.length + 1}`;
+    const self = opts.selfAuthored ?? (ownHosts.has(hostOf(url)) || hostNamesPerson(url) || ownSocial.has(key));
+    const flags = [...(opts.flags || [])];
+    if (self) flags.push('Probably written by the person or their organization');
+    if (!opts.published) flags.push('Publication date unknown');
+    if (kind === 'search result') flags.push('Only a search snippet: the page itself was not read');
+    idByUrl.set(key, id);
+    corpus[id] = clipped;
+    register.push({ id, url, title: clean(title).slice(0, 160) || url, kind, selfAuthored: self, accessedAt, published: opts.published, excerpt: clipped.slice(0, 400), flags });
+  };
+
+  for (const sd of seeds) add('your confirmed page', sd.url, sd.title || sd.url, sd.scraped || sd.title || '', { selfAuthored: OWN_PLATFORM.test(sd.platform || '') || undefined });
+  for (const w of wiki) { const u = w.match(/\((https?:\/\/[^)\s]+)\)/)?.[1]; if (u) add('encyclopedia', u, w.split('\n')[0], w); }
+  for (const line of [...oa, ...orc, ...ss, ...cr]) { const u = line.match(/https?:\/\/[^\s)]+/)?.[0]; if (u) add('scholarly record', u, line.split('\n')[0].slice(0, 120), line); }
+  for (const t of read.texts) { const u = t.match(/^PAGE (\S+)/)?.[1]; if (u) add('page', u, t.match(/\nTitle: (.*)/)?.[1] || u, t.split('\n').slice(1).join('\n')); }
+  for (const n of news.lines) { const parts = n.split(' | '); const u = parts[parts.length - 1]; add('news', u, parts[0], `${parts[0]} (${parts[1]}, ${parts[2]})`, { published: parts[2] }); }
+  for (const l of socials) add('social profile', l.url, `${l.platform} profile`, `${l.platform} profile. ${l.evidence}`);
+  for (const y of yt) { const u = y.match(/https?:\/\/\S+$/)?.[0]; if (u) add('video', u, y.slice(0, 100), y); }
+  for (const g of gh) { const u = g.match(/https?:\/\/\S+$/)?.[0]; if (u) add('code profile', u, g.slice(0, 100), g); }
+  for (const d of domains.lines) { const u = d.match(/https?:\/\/[^\s|]+/)?.[0]; if (u) add('page', u, d.split('|')[1]?.trim() || u, d); }
+  for (const h of hits) add('search result', h.url, h.title, `${h.title}. ${h.snippet}`);
+  const peerRegister: string[] = [];
+  for (const h of peers) {
+    const before = register.length;
+    add('peer research', h.url, h.title, `${h.title}. ${h.snippet}`, { selfAuthored: false });
+    if (register.length > before) peerRegister.push(register[register.length - 1].id);
+  }
+
+  // Context for the model: grouped, every item carries its source id
+  const group = (title: string, kinds: string[]) => {
+    const items = register.filter((r) => kinds.includes(r.kind) && !(kinds[0] === 'peer research' ? false : peerRegister.includes(r.id)));
+    if (!items.length) return '';
+    return `${title}\n` + items.map((r) => `[${r.id}] ${r.title}\nKind: ${r.kind}${r.flags.length ? ` | Warnings: ${r.flags.join('; ')}` : ''}\nURL: ${r.url}\n${corpus[r.id]}`).join('\n\n');
+  };
+  const sections = [
+    group('PAGES THE USER CONFIRMED ARE THEIR OWN OR ABOUT THEM:', ['your confirmed page']),
+    group('ENCYCLOPEDIA:', ['encyclopedia']),
+    group('SCHOLARLY RECORDS (OpenAlex, ORCID, Semantic Scholar, Crossref):', ['scholarly record']),
+    group('FULL PAGES READ:', ['page']),
+    group('NEWS (Google News headlines):', ['news']),
+    group('SOCIAL AND VIDEO PROFILES FOUND (check they are the same person):', ['social profile', 'video', 'code profile']),
+    group('SEARCH RESULTS (snippets only):', ['search result']),
+    peerRegister.length ? `POSSIBLE PEERS (other people working in "${field}"; use only to find comparable experts):\n` + peerRegister.map((id) => { const r = register.find((x) => x.id === id)!; return `[${r.id}] ${r.title}\nURL: ${r.url}\n${corpus[r.id]}`; }).join('\n\n') : '',
+  ].filter(Boolean);
 
   let context = sections.join('\n\n=====\n\n');
   if (context.length > maxChars) context = context.slice(0, maxChars) + '\n[truncated]';
 
-  const sources: { title: string; url: string }[] = [
-    ...hits.map((h) => ({ title: h.title || h.url, url: h.url })),
-    ...news.sources,
-    ...domains.sources,
-  ];
-  const seenUrl = new Set<string>();
-  const uniqueSources = sources.filter((s) => !seenUrl.has(s.url) && seenUrl.add(s.url));
-
+  const sources = register.map((r) => ({ title: r.title, url: r.url }));
   const CHECKED = ['LinkedIn', 'Facebook', 'Instagram', 'TikTok', 'X / Twitter', 'YouTube', 'Discord', 'Reddit'];
   const found = new Set(socials.map((l) => l.platform));
   const coverage: ResearchCoverage = {
-    sourcesUsed: uniqueSources.length,
-    pagesRead: pages.length,
+    sourcesUsed: register.length,
+    pagesRead: read.texts.length,
     platformsFound: CHECKED.filter((p) => found.has(p)),
     platformsNotFound: CHECKED.filter((p) => !found.has(p)),
     searchLimited: jobs.length > 0 && engineFailures / jobs.length > 0.5,
   };
 
   return {
+    register,
+    corpus,
     coverage,
     context,
-    sources: uniqueSources,
+    sources,
     socials,
     stats: {
       queries: jobs.length,
       failedQueries: engineFailures,
       hits: hits.length,
+      registered: register.length,
       news: news.lines.length,
-      scholarly: academic.length,
+      scholarly: oa.length + orc.length + ss.length + cr.length,
       youtube: yt.length,
       domains: domains.sources.length,
-      pagesRead: pages.length,
+      pagesRead: read.texts.length,
+      peers: peerRegister.length,
       socials: socials.length,
       ...Object.fromEntries(Object.entries(perEngine).flatMap(([k, v]) => [[`${k}Ok`, v.ok], [`${k}Empty`, v.empty]])),
     },

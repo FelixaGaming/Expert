@@ -3,6 +3,8 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { jsonrepair } from 'jsonrepair';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
+import { gatherResearch } from './research';
+import { buildPrompt, buildReport } from './analysis';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
 import { assertPublicUrl } from './safe-fetch';
@@ -463,31 +465,14 @@ app.post('/api/scrape-url', async (req, res) => {
 });
 
 
-// Behavioral Intelligence Analysis Endpoint
+// Evidence-based report: research first, then the AI writes from numbered sources, then the server checks every claim
 app.post('/api/analyze-presence', async (req, res) => {
-  const {
-    name,
-    selfPerception,
-    domain,
-    educationSchools,
-    workExperience,
-    awardsAccolades,
-    problemsChallenges,
-    publicUrl,
-    primaryMedium,
-    affiliation,
-    communicationPosture,
-    verifiedWebsites,
-    excludedWebsites,
-  } = req.body;
+  const { name, domain, affiliation, verifiedWebsites, excludedWebsites, selfAssessment } = req.body || {};
 
-  if (!name || !name.trim()) {
-    return res.status(400).json({ error: 'Name is required for behavioral research' });
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'A name is required.' });
   }
-
-  const cleanName = name.trim();
-  const resolvedDomain = domain?.trim() || 'Not specified (discover from sources)';
-  const resolvedAffiliation = affiliation?.trim() || 'Not specified (discover from sources)';
+  const cleanName = name.trim().slice(0, 120);
 
   let ai: AiConfig;
   try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
@@ -500,598 +485,57 @@ app.post('/api/analyze-presence', async (req, res) => {
   res.on('close', () => clearInterval(keepAlive));
   const finish = (body: unknown) => { clearInterval(keepAlive); res.end(JSON.stringify(body)); };
 
-  {
+  try {
+    const sites = (v: unknown): any[] => (Array.isArray(v) ? v.filter((w) => w && typeof w.url === 'string') : []);
+    const seeds = sites(verifiedWebsites).slice(0, 25).map((w) => {
+      const d = w.scrapedData || {};
+      const scraped = [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || []), ...(d.audienceReactions || [])]
+        .filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 2600);
+      return { url: w.url, title: typeof w.title === 'string' ? w.title : undefined, platform: typeof w.platform === 'string' ? w.platform : undefined, scraped };
+    });
+    const excluded = sites(excludedWebsites).slice(0, 50).map((w) => ({ title: String(w.title || w.url), url: w.url }));
+    const answers = (Array.isArray(selfAssessment) ? selfAssessment : []).slice(0, 6).map((a: any) => ({
+      question: String(a?.question || '').slice(0, 200), answer: String(a?.answer || '').slice(0, 700),
+    })).filter((a) => a.question);
+
+    const pack = await gatherResearch(
+      { name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), field: domain?.trim(), seeds, excludeUrls: excluded.map((e) => e.url), depth: 'deep' },
+      ai.provider === 'free' ? 9000 : 70_000,
+    );
+    console.log('research:', cleanName, JSON.stringify(pack.stats));
+    if (!pack.register.length) {
+      return finish({ error: 'Web search is temporarily unavailable. Please try again in a few minutes.', code: 'SEARCH_UNAVAILABLE' });
+    }
+
+    const prompt = buildPrompt({ name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), selfAssessment: answers, excluded, context: pack.context });
+    const response = await runModel(ai, prompt, false);
+
+    let raw: any;
     try {
-      const prompt = `You are ExpertScan, a public-perception analyst for experts, leaders and professionals.
-WRITING STYLE (very important): write for an ordinary person with no business or psychology background. Use short sentences and everyday words, at a level a 12-year-old can follow. Avoid jargon and buzzwords (no "synthesis", "thought leadership", "positioning", "benchmark", "longitudinal"). If you must use a technical word, explain it in a few words. Be kind and honest. Where the research is thin or you are unsure, say so plainly instead of sounding certain. Never invent facts.
+      raw = extractJson(response.text, '{');
+    } catch (e) {
+      console.warn('Could not read the model output:', e instanceof Error ? e.message : e);
+      return finish({ error: "The report could not be read. Please try again." });
+    }
 
-The user wants a friendly, constructive, and accurate mirror that shows:
-"How people see you vs. how you perceive yourself."
-
-CRITICAL USER MANDATE:
-1. The user has supplied ONLY their name: "${cleanName}" ${resolvedAffiliation ? `(affiliated with "${resolvedAffiliation}")` : ''} ${resolvedDomain ? `(domain "${resolvedDomain}")` : ''}.
-2. NEVER ask questions such as "who do you think you are", and do not require any self-assessment answers from the user!
-3. Based on this name alone, use web search to perform an exhaustive, multi-step search across the web to discover, extract, and ground ALL of the following:
-   - Self-Presentation & Account of What This Person Thinks of Themselves: Search across multiple online sources: social media profiles (LinkedIn "About", Facebook page bio, Twitter/X bio), podcast/video interviews, keynote transcripts, and authored articles/op-eds. Analyze how "${cleanName}" describes herself/themselves in their own words. What is their claimed mission, values, personal identity, and underlying philosophy?
-   - Evaluate Comments & Public Reactions: Search and evaluate actual comments under their posts, published articles, and recorded interviews (e.g. comments on LinkedIn posts, reactions on Facebook, YouTube video comments, forum discussions). What do commenters praise? What do peers or skeptics debate? What do audience reactions reveal about public reality versus how the person described themselves?
-   - Education & Schools: Search for their actual university degrees, alma maters, PhD/Master's/Bachelor's degrees, faculties, theses, and academic honors.
-   - Work Experience: Search for their career timeline, companies founded or led, executive positions, and key milestones throughout the years.
-   - Awards & Accolades: Search for public honors, rector's awards, grants, fellowships, and recognized accolades.
-   - Problems & Challenges: Search for tough hurdles, industry skepticism, misconceptions, or regulatory/technical obstacles they navigated and overcame.
-   - Longitudinal Evolution: How their public reputation has evolved across early career, rise to domain recognition, and current era.
-   - The Perception Mirror: Contrast how they present themselves (their claimed persona and aspirations) with what the public actually sees, comments on, and values.
-4. Tone & Language: Do NOT use the word "forensic" or anything related to that. Make this app sound friendly, supportive, constructive, and clear.
-5. All information MUST be 100% accurate, strictly grounded in authentic sources.
-
-Subject Profile:
-- Name: "${cleanName}"
-- Known Specialty / Domain: "${resolvedDomain}"
-- Known Affiliation: "${resolvedAffiliation}"
-- Self-Perception Provided By User: None (discover autonomously from their own self-authored bios/site/LinkedIn)
-- Education Provided By User: None (discover autonomously from university/school records)
-- Work Experience Provided By User: None (discover autonomously from career trajectory)
-- Awards Provided By User: None (discover autonomously from public honors)
-- Problems/Challenges Provided By User: None (discover autonomously from industry hurdles)
-${
-  Array.isArray(verifiedWebsites) && verifiedWebsites.length > 0
-    ? `- CONFIRMED AUTHENTIC WEBSITES & SCRAPED SIGNALS (Reviewed & Verified by user):\n${verifiedWebsites.map((w: any) => {
-        let line = `  * ${w.title} (${w.url}) [Platform: ${w.platform}]`;
-        if (w.scrapedData) {
-          if (w.scrapedData.snippet) line += `\n    - Scraped Summary: ${w.scrapedData.snippet}`;
-          if (w.scrapedData.headings && w.scrapedData.headings.length) line += `\n    - Headings: ${w.scrapedData.headings.join(' | ')}`;
-          if (w.scrapedData.extractedQuotes && w.scrapedData.extractedQuotes.length) line += `\n    - Scraped Quotes/Posts: ${w.scrapedData.extractedQuotes.join('; ')}`;
-          if (w.scrapedData.audienceReactions && w.scrapedData.audienceReactions.length) line += `\n    - Scraped Comments/Reactions: ${w.scrapedData.audienceReactions.join('; ')}`;
-          if (w.scrapedData.keySignals && w.scrapedData.keySignals.length) line += `\n    - Key Scraped Signals: ${w.scrapedData.keySignals.join('; ')}`;
-        }
-        return line;
-      }).join('\n')}`
-    : ''
-}
-${
-  Array.isArray(excludedWebsites) && excludedWebsites.length > 0
-    ? `- CRITICAL EXCLUDED ENTITIES (BELONG TO SOMEONE ELSE / DIFFERENT PERSON):\n${excludedWebsites.map((w: any) => `  * EXCLUDED: ${w.title} (${w.url}) - Reason: ${w.associationReason || 'Belongs to a different individual'}`).join('\n')}\nSTRICT DIRECTIVE: DO NOT attribute any publications, background, credentials, or sentiment from these excluded sources to ${cleanName}!`
-    : ''
-}
-
-RESEARCH & MIRROR SYNTHESIS MANDATE:
-1. Use web search to run comprehensive searches on this person:
-   - Search: "${cleanName}" "${resolvedAffiliation}"
-   - Search: "${cleanName}" ${resolvedDomain}
-   - Search: "${cleanName}" education university degree school thesis
-   - Search: "${cleanName}" career roles founder ceo director history
-   - Search: "${cleanName}" awards honors recognition fellowship
-   - Search: "${cleanName}" linkedin facebook comments audience response interview talk
-2. ANALYZE HOW THEY ARE SEEN THROUGHOUT THE YEARS:
-   - What is revealed across Google, LinkedIn, Scholar, and public records?
-   - Longitudinal Evolution: How has public perception and market understanding of this person evolved through the years?
-   - Social Media & Community Responses (LinkedIn, Facebook, Industry Forums, Comments): How do peers, clients, skeptics, and followers react to their posts, talks, and ideas? Include actual quotes, comments, and sentiment themes!
-   - Self-Perception vs. Public Perception (The Mirror): Compare how they present themselves in their bios with how the outside world actually perceives them across Education, Work Experience, Awards, and Challenges.
-   - Build Principle - Trust & Zero Hallucination: Ground strictly in real findings.
-   - Ground specifically on the confirmed authentic websites verified above!
-   - Longitudinal Evolution: How has public perception and market understanding of this person evolved through the years (e.g., formative schooling/origins, early ventures, rise to recognized authority, current positioning)?
-   - Social Media & Community Responses (LinkedIn, Facebook, Industry Forums, Comments): How do peers, clients, skeptics, and followers react to their posts, talks, and ideas? Include actual quotes, comments, and sentiment themes!
-   - Self-Perception vs. Public Perception (The Mirror): Compare how they see themselves with how the outside world actually perceives them across Education, Work Experience, Awards, and Challenges.
-   - Build Principle - Trust & Zero Hallucination: Do NOT invent fake URLs or fake facts. Ground in real findings.
-3. CONTEXTUALIZE VIRTUAL PRESENCE & SOURCES TRANSPARENTLY:
-   - Provide an itemized dossier of discovered sources with exact publisher, URL/platform, category, verifiable finding/evidence, and perceptual impact.
-
-Respond strictly with a JSON object in this exact schema:
-{
-  "subjectName": "${name}",
-  "primaryArchetype": "e.g. The Rigorous Pioneer / The Stealth Domain Authority / The Architectural Strategist",
-  "archetypeTagline": "A concise 1-sentence descriptor of their public perception",
-  "outerImpression": "3-4 sentences on how a high-stakes prospective buyer or audience perceives them within 60 seconds of discovering their presence online.",
-  "mirrorGap": "Analysis of the contrast: how the expert likely sees their own value vs. what the market actually perceives today.",
-  "overallPresenceQuotient": 78, // number between 0 and 100 representing market perception readiness
-  "dimensions": [
-    {
-      "name": "Authority & Credibility Signaling",
-      "score": 82,
-      "benchmark": 85,
-      "gap": -3,
-      "status": "optimal",
-      "description": "Specific evidence of verified credentials, publications, or public mentions.",
-      "evidence": "Observed empirical evidence or gaps"
-    },
-    {
-      "name": "Competence vs. Warmth Perception",
-      "score": 75,
-      "benchmark": 80,
-      "gap": -5,
-      "status": "moderate",
-      "description": "Perceptual balance on the Fiske Stereotype Content Model (high competence vs relational warmth).",
-      "evidence": "Tone and communication posture observed in their public presence"
-    },
-    {
-      "name": "Thematic Clarity & Thesis Sharpness",
-      "score": 70,
-      "benchmark": 78,
-      "gap": -8,
-      "status": "moderate",
-      "description": "How quickly an outsider understands what unique perspective they stand for.",
-      "evidence": "Analysis of their public headlines, bios, and article themes"
-    },
-    {
-      "name": "Market Pull & PR Footprint",
-      "score": 64,
-      "benchmark": 75,
-      "gap": -11,
-      "status": "critical",
-      "description": "Frequency of third-party citations, media quotes, podcasts, and independent validation.",
-      "evidence": "Web search volume and third-party media presence"
-    },
-    {
-      "name": "Commercial Attractiveness & Fee Justification",
-      "score": 76,
-      "benchmark": 82,
-      "gap": -6,
-      "status": "moderate",
-      "description": "How easily an enterprise decision-maker can justify paying top-tier advisory rates.",
-      "evidence": "Proof points, case studies, or institutional affiliation signals"
-    }
-  ],
-  "sentimentDistribution": {
-    "positiveEndorsement": 68,
-    "neutralInformational": 24,
-    "criticalChallenging": 8,
-    "unindexedExpertise": 35
-  },
-  "deepExcavation": [
-    {
-      "layerNumber": 1,
-      "name": "Layer 1: The 60-Second Surface",
-      "subtitle": "Top SERP, primary social profiles, immediate executive bio",
-      "whatIsDiscovered": "What a casual visitor or prospect sees on Google Page 1",
-      "perceivedGravity": "High Gravitas", // "High Gravitas" | "Moderate Alignment" | "Fragile / Understated" | "Missing"
-      "friendlyInsights": ["Insight 1", "Insight 2"],
-      "evidenceExcerpts": ["Verifiable quote or observation"]
-    },
-    {
-      "layerNumber": 2,
-      "name": "Layer 2: Corporate & Entity Lineage",
-      "subtitle": "Company filings, boutique entities, formal advisory seats",
-      "whatIsDiscovered": "Corporate registries, registered ventures, and institutional roles",
-      "perceivedGravity": "High Gravitas",
-      "friendlyInsights": ["Insight 1", "Insight 2"],
-      "evidenceExcerpts": ["Verifiable quote or observation"]
-    },
-    {
-      "layerNumber": 3,
-      "name": "Layer 3: Scholarly Depth & Intellectual Property",
-      "subtitle": "Peer-reviewed research, dissertations, whitepapers, patents, proprietary frameworks",
-      "whatIsDiscovered": "The empirical foundation and academic rigor behind their advisory work",
-      "perceivedGravity": "High Gravitas",
-      "friendlyInsights": ["Insight 1", "Insight 2"],
-      "evidenceExcerpts": ["Verifiable quote or observation"]
-    },
-    {
-      "layerNumber": 4,
-      "name": "Layer 4: Earned Media, Audio & Speeches",
-      "subtitle": "Podcast guestings, panel transcripts, keynote appearances, vertical press quotes",
-      "whatIsDiscovered": "How they articulate ideas in live broadcast and dialogue",
-      "perceivedGravity": "Moderate Alignment",
-      "friendlyInsights": ["Insight 1", "Insight 2"],
-      "evidenceExcerpts": ["Verifiable quote or observation"]
-    },
-    {
-      "layerNumber": 5,
-      "name": "Layer 5: Shadow Presence & Digital Anomalies",
-      "subtitle": "Outdated bios, unindexed methodologies, fragmented handles, attribution leaks",
-      "whatIsDiscovered": "Gaps, missed commercial attribution, and hidden assets locked behind closed doors",
-      "perceivedGravity": "Fragile / Understated",
-      "friendlyInsights": ["Insight 1", "Insight 2"],
-      "evidenceExcerpts": ["Verifiable quote or observation"]
-    }
-  ],
-  "disclosedSources": [
-    {
-      "id": "src-1",
-      "title": "Title of public document, article, or profile",
-      "url": "https://...",
-      "publisher": "Platform or Organization",
-      "category": "Academic & Scholarly", // "Academic & Scholarly" | "Corporate & Registry" | "Media & Press" | "Speaking & Audio" | "Social & Commentary" | "Digital Archive"
-      "dateOrEra": "2023 - Present",
-      "discoveredEvidence": "Specific empirical fact, quote, or role verified at this source",
-      "contextualSignificance": "Why this specific source matters to high-stakes observers",
-      "authorityImpact": "High Credibility" // "High Credibility" | "Moderate Signal" | "Friction / Outdated" | "Untapped Asset"
-    }
-  ],
-  "virtualPresenceMatrix": [
-    {
-      "channel": "Scholarly & Research Repositories",
-      "maturity": "Established Presence", // "Category Leader" | "Established Presence" | "Emerging / Fragmented" | "Dormant / Stealth"
-      "coverageScore": 84,
-      "observedNarrative": "Observed narrative tone in research archives",
-      "contextualDiagnosis": "Actionable evaluation of how this channel supports their PR"
-    },
-    {
-      "channel": "Executive LinkedIn & Professional Network",
-      "maturity": "Established Presence",
-      "coverageScore": 76,
-      "observedNarrative": "Tone and cadence on professional social channels",
-      "contextualDiagnosis": "Actionable evaluation"
-    },
-    {
-      "channel": "Mainstream Business & Tech Press",
-      "maturity": "Emerging / Fragmented",
-      "coverageScore": 52,
-      "observedNarrative": "Third-party press mentions and quotes",
-      "contextualDiagnosis": "Actionable evaluation"
-    },
-    {
-      "channel": "Podcast & Audio/Video Broadcast",
-      "maturity": "Emerging / Fragmented",
-      "coverageScore": 60,
-      "observedNarrative": "Interview presence and conversational authority",
-      "contextualDiagnosis": "Actionable evaluation"
-    },
-    {
-      "channel": "Proprietary Digital Anchor (Practice Hub / Website)",
-      "maturity": "Category Leader",
-      "coverageScore": 82,
-      "observedNarrative": "Clarity of value proposition on their owned hub",
-      "contextualDiagnosis": "Actionable evaluation"
-    },
-    {
-      "channel": "Advisory Boards & Governance Registries",
-      "maturity": "Established Presence",
-      "coverageScore": 75,
-      "observedNarrative": "Formal governance and committee affiliations",
-      "contextualDiagnosis": "Actionable evaluation"
-    }
-  ],
-  "deepMirrorReflection": {
-    "executiveSummary": "Comprehensive friendly 3-4 sentence assessment of what someone discovers when looking deeply into their background.",
-    "verifiedCoreStrengths": ["Strength 1 with evidence", "Strength 2 with evidence", "Strength 3 with evidence"],
-    "discoveredPerceptionRisks": ["Blind spot 1 with evidence", "Blind spot 2 with evidence"],
-    "theUnindexedAsset": "The most valuable methodology, research, or capability they possess that is currently under-communicated in public PR.",
-    "outsideWorldVerdict": "The outside world's verdict: why people trust them and how to remove friction so people appreciate their full value."
-  },
-  "mirrorComparison": {
-    "selfPerceptionSummary": "Who they think they are: summary of their self-image and internal values",
-    "publicPerceptionSummary": "What people actually think of them: summary of outside perception",
-    "educationReflection": {
-      "schoolsAndDegrees": "Alma maters, degrees, universities, academic honors",
-      "howYouViewIt": "How they view their schooling and academic credentials",
-      "howPeoplePerceiveIt": "How people and outside observers perceive their schooling",
-      "quoteOrSignal": "Verifiable quote or perception signal regarding education"
-    },
-    "workExperienceReflection": {
-      "rolesAndMilestones": "Key positions, companies, projects, and career milestones",
-      "howYouViewIt": "How they view their work experience and contributions",
-      "howPeoplePerceiveIt": "How prospective clients, peers, or recruiters view their career track",
-      "quoteOrSignal": "Verifiable quote or perception signal regarding work experience"
-    },
-    "awardsReflection": {
-      "recognitionsAndHonors": "Awards, public honors, and accolades",
-      "howYouViewIt": "How they view their awards",
-      "howPeoplePerceiveIt": "Whether people know about these awards or if they are hidden",
-      "quoteOrSignal": "Verifiable quote or citation regarding honors"
-    },
-    "challengesAndProblemsReflection": {
-      "problemsOrMisconceptions": "Tough problems solved, misconceptions, or obstacles navigated",
-      "howYouViewIt": "How they navigated and learned from these challenges",
-      "howPeoplePerceiveIt": "How audiences and peers responded to these challenges",
-      "quoteOrSignal": "Verifiable quote or community comment about overcoming challenges"
-    },
-    "gapBreakdown": [
-      {
-        "aspect": "e.g. Education & Academic Heritage / Career Gravitas / Awards Visibility / Overcoming Skepticism",
-        "howYouSeeIt": "Inner self-perception",
-        "howTheWorldSeesIt": "Outer public reality",
-        "clearExampleOrQuote": "Exact quote, comment, or observation",
-        "friendlyGuidance": "Encouraging, constructive advice to align the two views"
-      }
-    ]
-  },
-  "discoveredFootprint": [
-    {
-      "title": "Title of article, profile, or talk",
-      "source": "Platform or Publisher",
-      "type": "Profile | Article | Media | Paper | Speaking",
-      "observation": "What this shows the public about their behavioral presence"
-    }
-  ],
-  "prAndVisibilityGaps": [
-    {
-      "issue": "Specific blind spot or narrative friction",
-      "severity": "High | Medium | Low",
-      "impactOnRevenue": "How this gap reduces deal flow or fee premium",
-      "actionableRecommendation": "Immediate behavioral or PR remedy"
-    }
-  ],
-  "timeline": [
-    {
-      "phase": "Phase 1: Narrative & Mirror Realignment",
-      "timeframe": "Days 1 – 30",
-      "focus": "Fix the immediate 60-second impression and unify fragmented digital touchpoints",
-      "actions": ["Action 1", "Action 2", "Action 3"],
-      "expectedImpact": "Immediate clarity for incoming referrals and inbound visitors",
-      "revenueUpside": "Eliminates perception friction on 100% of pipeline pitches"
-    },
-    {
-      "phase": "Phase 2: Strategic PR & High-Authority Placement",
-      "timeframe": "Days 31 – 60",
-      "focus": "Place core insights into targeted media, podcasts, and recognized publications",
-      "actions": ["Action 1", "Action 2", "Action 3"],
-      "expectedImpact": "Third-party validation establishing category authority",
-      "revenueUpside": "Inbound deal inquiries without cold outreach"
-    },
-    {
-      "phase": "Phase 3: Authority Monetization & Advisory Premium",
-      "timeframe": "Days 61 – 90",
-      "focus": "Leverage amplified reputation to introduce premium retainers and waitlists",
-      "actions": ["Action 1", "Action 2", "Action 3"],
-      "expectedImpact": "Shift from being evaluated against peers to uncontested authority",
-      "revenueUpside": "30% to 50% uplift in accepted advisory fee rates"
-    }
-  ],
-  "audienceResponseAnalysis": {
-    "overallDiscourseSummary": "Comprehensive 3-4 sentence analysis of how social media audiences, peers, and clients engage with and comment on their work.",
-    "longitudinalEvolution": [
-      {
-        "era": "Early Career / Academic Foundation",
-        "years": "e.g. 2015 – 2019",
-        "definingNarrative": "How they were perceived in their early public stages",
-        "publicReception": "Character of public and peer reaction",
-        "sentimentShift": "Formative / Low Visibility", // "Formative / Low Visibility" | "Rising Authority" | "Established Category Anchor" | "Pivoting / Broadening"
-        "keyMilestones": ["Early milestone or publication"]
+    const report = buildReport({
+      raw,
+      ctx: {
+        register: pack.register,
+        corpus: pack.corpus,
+        peerIds: new Set(pack.register.filter((r) => r.kind === 'peer research').map((r) => r.id)),
+        subjectName: cleanName,
       },
-      {
-        "era": "Rise to Domain Recognition",
-        "years": "e.g. 2020 – 2023",
-        "definingNarrative": "Shift towards industry recognition and keynote/advisory positioning",
-        "publicReception": "Increased inbound respect, citations, and professional engagement",
-        "sentimentShift": "Rising Authority",
-        "keyMilestones": ["Platform launch or marquee paper"]
-      },
-      {
-        "era": "Current Era: Strategic Authority & Scale",
-        "years": "2024 – Present",
-        "definingNarrative": "Contemporary market stance and advisory footprint",
-        "publicReception": "High respect with recurring desire for accessible commercial frameworks",
-        "sentimentShift": "Established Category Anchor",
-        "keyMilestones": ["Current venture, executive counsel, and public voice"]
-      }
-    ],
-    "platformDossiers": [
-      {
-        "platform": "LinkedIn",
-        "handleOrProfile": "Executive Profile / Company Page",
-        "audienceType": "C-Suite, Founders, VP Product, Trust & Safety Heads, Academics",
-        "dominantTone": "Deep Respect & Endorsement", // "Deep Respect & Endorsement" | "Intellectual Debate" | "Passive Observation" | "Mixed Engagement"
-        "recurringCommentThemes": [
-          "Validation of empirical rigor over tech hype",
-          "Calls for real-world implementation case studies",
-          "High alignment with ethical and human-centric mission"
-        ],
-        "sampleResponses": [
-          {
-            "archetype": "Enterprise Executive / Studio Head",
-            "quoteOrSentiment": "Strong praise for bringing scientific rigor to a domain dominated by guesswork",
-            "context": "Responses to thought leadership posts and milestone announcements"
-          },
-          {
-            "archetype": "Industry Peer / Researcher",
-            "quoteOrSentiment": "Intellectual respect and citation of methodologies",
-            "context": "Professional debate and methodology discussion"
-          }
-        ],
-        "engagementMetrics": {
-          "resonanceScore": 84,
-          "discourseDepth": "High-Level & Substantive", // "High-Level & Substantive" | "Transactional" | "Conversational" | "Quiet / Under-leveraged"
-          "sentimentRatio": "88% Positive / 10% Inquisitive / 2% Critical"
-        }
-      },
-      {
-        "platform": "Facebook",
-        "handleOrProfile": "Public Footprint / Community Mentions",
-        "audienceType": "Broader professional community, event attendees, peers",
-        "dominantTone": "Passive Observation",
-        "recurringCommentThemes": [
-          "Supportive congratulations on awards and speaking appearances",
-          "Limited deep technical debate compared to LinkedIn"
-        ],
-        "sampleResponses": [
-          {
-            "archetype": "Colleague / Community Follower",
-            "quoteOrSentiment": "Warm congratulations and interpersonal validation",
-            "context": "Event photos and organizational updates"
-          }
-        ],
-        "engagementMetrics": {
-          "resonanceScore": 62,
-          "discourseDepth": "Conversational",
-          "sentimentRatio": "92% Positive / 8% Neutral"
-        }
-      },
-      {
-        "platform": "Industry Forums & YouTube",
-        "handleOrProfile": "Conference Talks & Keynote Streams",
-        "audienceType": "Engineers, behavioral psychologists, industry practitioners",
-        "dominantTone": "Intellectual Debate",
-        "recurringCommentThemes": [
-          "Appreciation for actionable behavioral dynamics",
-          "Questions regarding integration complexity"
-        ],
-        "sampleResponses": [
-          {
-            "archetype": "Practitioner / Developer",
-            "quoteOrSentiment": "Fascinating talk; would love to see how this scales in live service environments",
-            "context": "Comments under conference recordings and panel discussions"
-          }
-        ],
-        "engagementMetrics": {
-          "resonanceScore": 76,
-          "discourseDepth": "High-Level & Substantive",
-          "sentimentRatio": "85% Positive / 12% Inquisitive / 3% Skeptical"
-        }
-      }
-    ],
-    "sentimentSynthesis": {
-      "whatPeoplePraiseMost": [
-        "Uncompromising scientific integrity and evidence-based grounding",
-        "Compassionate, human-first perspective on technology and behavior"
-      ],
-      "whatAudiencesQuestionOrDebate": [
-        "How quickly the academic frameworks can be operationalized by resource-constrained teams",
-        "Commercial monetization metrics vs. pure compliance"
-      ],
-      "perceivedRelatabilityVsDistance": "High intellectual gravitas commands immediate respect, but occasional academic phrasing can create slight perceptual distance for hurried commercial operators."
-    }
-  },
-  "selfDescriptionFromSources": {
-    "synthesizedSelfAccount": "Unified account of what this person thinks of themselves, synthesized from their own statements across social media, interviews, and authored articles.",
-    "primarySelfArchetype": "How they conceptualize their role (e.g. Empirical Reformer / Strategic Catalyst)",
-    "coreSelfBeliefs": [
-      "Stated principle or mission 1",
-      "Stated principle or mission 2"
-    ],
-    "socialMediaBios": [
-      {
-        "platform": "LinkedIn", // "LinkedIn" | "Facebook" | "Twitter / X" | "Substack"
-        "handleOrUrl": "https://...",
-        "headline": "Profile headline",
-        "selfDescriptionExcerpt": "Quote or summary from bio",
-        "statedMissionAndValues": "Stated purpose",
-        "toneAndPosture": "Analytical, mission-driven, etc."
-      }
-    ],
-    "interviewsAndPodcasts": [
-      {
-        "outletOrHost": "Name of podcast, media show, or conference",
-        "titleOrTopic": "Topic or title",
-        "yearOrEra": "2024",
-        "directSelfQuote": "Direct quote of how they describe their work, philosophy, or motivation",
-        "topicContext": "Context of discussion",
-        "underlyingSelfView": "What this reveals about their self-conception"
-      }
-    ],
-    "articlesAndAuthoredPieces": [
-      {
-        "publication": "Publisher / Medium / Substack",
-        "title": "Article title",
-        "authorBioOrStatement": "Author bio excerpt",
-        "statedMission": "Stated goal of their work",
-        "primaryPerspective": "Perspective taken"
-      }
-    ]
-  },
-  "evaluatedCommentsAndFeedback": {
-    "overallCommentsSummary": "Comprehensive evaluation of comments under posts, articles, and interviews.",
-    "netPublicSentimentScore": 88, // 0-100
-    "sentimentBreakdown": {
-      "admirationAndPraise": 78,
-      "curiosityAndInquiry": 16,
-      "constructiveSkepticism": 6
-    },
-    "commentThreads": [
-      {
-        "sourceTitle": "Title of post, article, or interview recording",
-        "sourceType": "Social Media Post", // "Social Media Post" | "Article & Op-Ed" | "Interview & Podcast" | "Conference & Keynote"
-        "platform": "LinkedIn", // "LinkedIn" | "Facebook" | "YouTube" | "Industry Press" | "Forum & Community"
-        "totalAnalyzedComments": 35,
-        "dominantSentiment": "Overwhelmingly Endorsing",
-        "sentimentRatio": "88% Endorsement / 9% Inquisitive / 3% Skeptical",
-        "keyCommentThemes": ["Theme 1", "Theme 2"],
-        "contrastWithSelfDescription": "How the comments compare with what the person stated in this post/interview",
-        "sampleComments": [
-          {
-            "commenterRole": "Role of commenter (e.g. Senior Director, Academic Peer, Client, Skeptic)",
-            "commentText": "Specific comment or reaction quote",
-            "sentiment": "positive", // "positive" | "constructive" | "skeptical"
-            "reflectionInsight": "What this reveals about public perception versus self-description"
-          }
-        ]
-      }
-    ],
-    "contrastHighlights": [
-      {
-        "selfClaim": "What the person claimed about themselves or their mission in an interview or post",
-        "sourceContext": "Source context",
-        "commentersConsensus": "What comments under the piece actually say",
-        "mirrorTakeaway": "Constructive takeaway to align perception"
-      }
-    ]
+      coverage: pack.coverage,
+      selfAssessmentGiven: answers.some((a) => a.answer.trim().length > 0),
+      fallbackField: domain?.trim() || '',
+    });
+    return finish({ success: true, data: report, source: ai.provider });
+  } catch (err) {
+    if (err instanceof AiError) return finish({ error: err.message, code: err.code });
+    console.error('Analysis failed:', err instanceof Error ? err.message : err);
+    return finish({ error: 'Live analysis failed. Please try again.' });
   }
-}`;
-
-      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), { name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), depth: 'deep' });
-      const responseText = response.text;
-      const webSources = response.sources;
-
-      // Clean markdown code fence and isolate JSON object
-      let cleanedJson = responseText.trim();
-      const firstBrace = cleanedJson.indexOf('{');
-      const lastBrace = cleanedJson.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        cleanedJson = cleanedJson.substring(firstBrace, lastBrace + 1);
-      } else {
-        if (cleanedJson.startsWith('```json')) {
-          cleanedJson = cleanedJson.replace(/^```json\s*/, '').replace(/```$/, '').trim();
-        } else if (cleanedJson.startsWith('```')) {
-          cleanedJson = cleanedJson.replace(/^```\s*/, '').replace(/```$/, '').trim();
-        }
-      }
-
-      try {
-        const parsed = parseLenient(cleanedJson);
-        parsed.webSources = webSources;
-        parsed.coverage = response.coverage;
-
-        // Models sometimes omit sections: make sure the lists and numbers the page reads always exist
-        for (const key of ['dimensions', 'deepExcavation', 'disclosedSources', 'virtualPresenceMatrix', 'discoveredFootprint', 'prAndVisibilityGaps', 'timeline']) {
-          if (!Array.isArray(parsed[key])) parsed[key] = [];
-        }
-        const sd = parsed.sentimentDistribution && typeof parsed.sentimentDistribution === 'object' ? parsed.sentimentDistribution : {};
-        parsed.sentimentDistribution = {
-          positiveEndorsement: Number(sd.positiveEndorsement) || 0,
-          neutralInformational: Number(sd.neutralInformational) || 0,
-          criticalChallenging: Number(sd.criticalChallenging) || 0,
-          unindexedExpertise: Number(sd.unindexedExpertise) || 0,
-        };
-        parsed.overallPresenceQuotient = Number(parsed.overallPresenceQuotient) || 0;
-        if (!parsed.deepMirrorReflection || typeof parsed.deepMirrorReflection !== 'object') {
-          return finish({ error: 'The report came back incomplete. Please run the search again.' });
-        }
-
-        // If parsed disclosedSources is empty or missing, populate from webSources and discoveredFootprint
-        if (!parsed.disclosedSources || parsed.disclosedSources.length === 0) {
-          parsed.disclosedSources = webSources.map((ws: any, idx: number) => {
-            let publisher = 'Web Platform';
-            try {
-              if (ws.url) {
-                publisher = new URL(ws.url).hostname.replace(/^www\./, '');
-              }
-            } catch {
-              publisher = 'Grounded Index';
-            }
-            return {
-              id: `src-grounded-${idx + 1}`,
-              title: ws.title || 'Discovered Web Resource',
-              url: ws.url || 'https://www.google.com',
-              publisher,
-              category: 'Media & Press',
-              dateOrEra: 'Recent Discovery',
-              discoveredEvidence: `Grounded public index touchpoint retrieved during automated web search.`,
-              contextualSignificance: `Discovered in real-time web index during deep footprint crawl.`,
-              authorityImpact: 'High Credibility',
-            };
-          });
-        }
-
-        return finish({ success: true, data: parsed, source: `${ai.provider}-grounded` });
-      } catch (e) {
-        console.warn('Failed to parse model JSON output:', e instanceof Error ? e.message : e);
-      }
-    } catch (apiError) {
-      if (apiError instanceof AiError) return finish({ error: apiError.message, code: apiError.code });
-      console.error('Analysis failed:', apiError instanceof Error ? apiError.message : apiError);
-      return finish({ error: 'Live analysis failed. Please try again.' });
-    }
-  }
-
-  return finish({ error: 'The model\'s report could not be read. Please try again.' });
 });
 
 
