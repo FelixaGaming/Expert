@@ -39,9 +39,13 @@ const SourceCard: React.FC<{ source: SourceRecord; quote?: string; quoteChecked?
   <div className="rounded-lg border border-stone-200 bg-white p-3 text-xs space-y-1.5">
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       <span className="font-mono-code font-semibold text-stone-500">{source.id}</span>
-      <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-stone-900 hover:underline inline-flex items-center gap-1 break-all">
-        {source.title} <ExternalLink className="w-3 h-3 shrink-0" />
-      </a>
+      {source.url.startsWith('about:') ? (
+        <span className="font-medium text-stone-900">{source.title}</span>
+      ) : (
+        <a href={source.url} target="_blank" rel="noreferrer" className="font-medium text-stone-900 hover:underline inline-flex items-center gap-1 break-all">
+          {source.title} <ExternalLink className="w-3 h-3 shrink-0" />
+        </a>
+      )}
     </div>
     <div className="text-stone-500">{source.kind} · accessed {fmtDate(source.accessedAt)}{source.published ? ` · published ${source.published}` : ''}</div>
     {quote && (

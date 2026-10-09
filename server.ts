@@ -507,7 +507,20 @@ app.post('/api/analyze-presence', async (req, res) => {
       return finish({ error: 'Web search is temporarily unavailable. Please try again in a few minutes.', code: 'SEARCH_UNAVAILABLE' });
     }
 
-    const prompt = buildPrompt({ name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), selfAssessment: answers, excluded, context: pack.context });
+    // The person's own answers become a numbered source so they can be cited as self-reported
+    let selfSourceId: string | undefined;
+    const given = answers.filter((a) => a.answer.trim());
+    if (given.length) {
+      selfSourceId = `S${pack.register.length + 1}`;
+      const text = given.map((a) => `${a.question} ${a.answer}`).join('\n');
+      pack.register.push({
+        id: selfSourceId, url: 'about:self-assessment', title: 'Your own answers to the optional questions', kind: 'self-assessment',
+        selfAuthored: true, accessedAt: new Date().toISOString().slice(0, 10), excerpt: text.slice(0, 400), flags: ['Written by the person themself'],
+      });
+      pack.corpus[selfSourceId] = text;
+    }
+
+    const prompt = buildPrompt({ name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), selfAssessment: answers, selfSourceId, excluded, context: pack.context });
     const response = await runModel(ai, prompt, false);
 
     let raw: any;

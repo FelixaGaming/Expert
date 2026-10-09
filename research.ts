@@ -480,14 +480,30 @@ async function authorTopics(name: string): Promise<string[]> {
   return (a?.topics || []).slice(0, 3).map((t: any) => t.display_name as string).filter(Boolean);
 }
 
-async function peerHits(field: string): Promise<RawHit[]> {
-  const queries = [`leading experts in ${field}`, `top ${field} consultants speakers researchers`];
+// Top researchers in the same field, from the open OpenAlex index (reliable, no key).
+// Search-engine results are not used for peers: when an engine is throttled they are unrelated pages.
+async function peerHits(field: string, ownTopics: string[]): Promise<RawHit[]> {
+  const words = field.split(/[,/;&]| and /i).map((x) => x.trim()).filter(Boolean);
+  // The person's own research topics match best, so they go first
+  const candidates = [...new Set([...ownTopics, field, ...words, ...field.split(/\s+/).filter((w) => w.length > 4)])].slice(0, 8);
+  const seen = new Set<string>();
+  const topics: { id: string; name: string }[] = [];
+  for (const c of candidates) {
+    if (topics.length >= 3) break;
+    const j = await getJson(`https://api.openalex.org/topics?search=${encodeURIComponent(c)}&per-page=1`);
+    const t = j?.results?.[0];
+    if (t?.id && !seen.has(t.id)) { seen.add(t.id); topics.push({ id: t.id, name: t.display_name }); }
+  }
   const out: RawHit[] = [];
-  for (const query of queries) {
-    for (const engine of ENGINES) {
-      const r = await engine.run(query);
-      out.push(...r);
-      if (r.length) break;
+  for (const t of topics) {
+    const authors = await getJson(`https://api.openalex.org/authors?filter=topics.id:${encodeURIComponent(t.id.split('/').pop() || '')}&sort=cited_by_count:desc&per-page=6`);
+    for (const a of authors?.results || []) {
+      const inst = (a.last_known_institutions || []).map((i: any) => i.display_name).filter(Boolean).join('; ');
+      out.push({
+        title: `${a.display_name} (leading researcher in "${t.name}")`,
+        url: a.id,
+        snippet: `${a.display_name}: ${a.works_count} works, ${a.cited_by_count} citations${inst ? `, ${inst}` : ''}. Field: ${t.name}.`,
+      });
     }
   }
   return out;
@@ -558,6 +574,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     if (domain?.trim()) return domain.trim();
     return (await authorTopics(name)).join(' ');
   })().catch(() => '');
+  const ownTopicsPromise = deep ? authorTopics(name).catch(() => [] as string[]) : Promise.resolve([] as string[]);
 
   await pool(jobs, 6, async ({ engine, query }) => {
     let results = await engine.run(query);
@@ -635,7 +652,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   // Peers: who else works in this field (never the person themself)
   let peers: RawHit[] = [];
   if (deep && field) {
-    peers = (await peerHits(field)).filter((h) => !sameName(`${h.title} ${h.snippet}`, name)).slice(0, 12);
+    peers = (await peerHits(field, await ownTopicsPromise)).filter((h) => !sameName(`${h.title} ${h.snippet}`, name)).slice(0, 14);
   }
 
   // Social profiles: strongest evidence first, no duplicates, at most 3 per platform

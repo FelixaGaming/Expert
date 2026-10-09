@@ -83,6 +83,7 @@ export interface PromptInput {
   affiliation?: string;
   domain?: string;
   selfAssessment: SelfAssessmentAnswer[];
+  selfSourceId?: string;
   excluded: { title: string; url: string }[];
   context: string;
 }
@@ -97,7 +98,7 @@ export function buildPrompt(i: PromptInput): string {
 SUBJECT: "${i.name}"${i.affiliation ? `, linked to "${i.affiliation}"` : ''}${i.domain ? `, field "${i.domain}"` : ''}.
 ${i.excluded.length ? `\nPAGES THE USER SAYS BELONG TO SOMEONE ELSE (never use them):\n${i.excluded.map((e) => `- ${e.title} (${e.url})`).join('\n')}\n` : ''}
 SELF-ASSESSMENT (the person's own answers, used only for "self-perception"):
-${answers.length ? answers.map((a) => `- ${a.question}\n  Answer: ${a.answer}`).join('\n') : 'None given. Self-perception is therefore unknown: leave "selfPerception" empty.'}
+${answers.length ? `These answers are source ${i.selfSourceId || 'the self-assessment'}. Cite it for self-perception and quote the person's own words.\n` + answers.map((a) => `- ${a.question}\n  Answer: ${a.answer}`).join('\n') : 'None given. Self-perception is therefore unknown: leave "selfPerception" empty.'}
 
 WRITING STYLE: plain, short sentences and everyday words, so an ordinary reader understands. Explain any technical word. Be kind and honest. Write fewer items where evidence is weak and more only where sources support them. Never use filler.
 
@@ -193,7 +194,9 @@ export function checkFinding(raw: any, ctx: CheckContext): Finding | null {
 
   const needsQuote = status === 'verified' || status === 'self-reported' || status === 'observed';
   if (needsQuote) {
-    const supported = !!excerpt && sources.some((id) => excerptSupported(excerpt, ctx.corpus[id] || ''));
+    // The person's own answers are their own words: a self-reported finding that cites them needs no extra quote
+    const fromOwnAnswers = status === 'self-reported' && sources.length > 0 && sources.every((id) => byId.get(id)!.kind === 'self-assessment');
+    const supported = fromOwnAnswers || (!!excerpt && sources.some((id) => excerptSupported(excerpt, ctx.corpus[id] || '')));
     excerptVerified = supported;
     if (!sources.length || !supported) {
       status = 'unknown';
