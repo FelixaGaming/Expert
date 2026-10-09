@@ -232,13 +232,17 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 // Runs the local `claude` CLI (your Claude login, no API key) Development only.
 // Claude gets NO tools: the server searches and hands it the results as text.
 async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
-  const { full: prompt, sources, socials, coverage } = await withSearchContext(rawPrompt, search, query, research);
+  // Premium mode (CLAUDE_CLI_TOOLS=web): Claude may search and open pages itself, with the best model and high effort
+  const agentic = process.env.CLAUDE_CLI_TOOLS === 'web';
+  const { full: prompt, sources, socials, coverage } = await withSearchContext(rawPrompt, search, query, research, 120_000, agentic);
   return new Promise((resolve, reject) => {
-    const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
+    const args = agentic
+      ? ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch', '--effort', 'high', '--no-session-persistence', '--permission-mode', 'dontAsk']
+      : ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 900_000);
+    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, (agentic ? 2_400_000 : 900_000));
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', () => { clearTimeout(timer); reject(new AiError('The `claude` command was not found on this computer.', 503, 'CLI_MISSING')); });
@@ -259,8 +263,10 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
 }
 
 // Runs DuckDuckGo searches on the server and prepends the results, so a model with no web tools can still use live data.
-async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 120_000) {
-  const intro = 'You have no browsing tools. The web research has already been done for you: the material below was gathered live and is your only source of facts. Where the task says to search the web, use this material instead. Cite only URLs that appear in it. If the material does not support a claim, say it is not found rather than inventing it. The material may include namesakes (other people with the same name): use affiliation, field and location to separate them, and flag doubtful matches. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.';
+const AGENTIC_INTRO = 'You can use the tools WebSearch and WebFetch. The research material below was gathered first: treat it as a starting point and go much deeper with your tools. Search for and open pages about: awards and recognitions, talks, presentations, keynotes, conferences, publications, books, interviews, podcasts, videos, news, advisory and board roles, committees, projects, testimonials, and social profiles. Open the person\'s own sites and their other pages. Check for other people with the same name and keep them apart. WebFetch cannot read LinkedIn or Facebook, so never claim to have read them. Cite only URLs that appear in the material or that you actually opened. Keep going until each area is covered. When you are done, answer in the exact output format the task requires, with nothing before or after it, and never ask questions.';
+
+async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 120_000, agentic = false) {
+  const intro = agentic ? AGENTIC_INTRO : 'You have no browsing tools. The web research has already been done for you: the material below was gathered live and is your only source of facts. Where the task says to search the web, use this material instead. Cite only URLs that appear in it. If the material does not support a claim, say it is not found rather than inventing it. The material may include namesakes (other people with the same name): use affiliation, field and location to separate them, and flag doubtful matches. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.';
   if (search && research) {
     const pack = await gatherResearch(research, maxChars);
     console.log('research:', research.name, JSON.stringify(pack.stats));
