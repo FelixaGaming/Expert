@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, ShieldCheck, BookOpen, Search, Eye, Scale } from 'lucide-react';
+import { X, ShieldCheck } from 'lucide-react';
 
 interface MethodologyModalProps {
   isOpen: boolean;
@@ -9,76 +9,42 @@ interface MethodologyModalProps {
 export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
+  const steps: [string, string][] = [
+    ['We search the public web.', 'We use several search engines, news, encyclopedia and research records (OpenAlex, ORCID, Crossref, Semantic Scholar), and we read the pages we can open. Pages you tick in the review step are read first. Pages you untick are never used.'],
+    ['Every source gets a number.', 'The AI may only use numbered sources. It is not allowed to invent sources, quotes, comments or people.'],
+    ['The server checks the AI.', 'Quotes and comments must be found word for word in the source, or they are removed or shown as "Not proven". A claim that only the person\'s own page supports is marked "Self-reported", not "Verified".'],
+    ['Every finding has a label.', 'Verified, self-reported, observed, inference, hypothesis or not proven. Click "Evidence" on any finding to see the source, the date we accessed it and the exact words.'],
+    ['Three views are kept apart.', 'How the person sees themself (only from their own answers), how they present themself (their own channels), and what independent sources show.'],
+    ['Scores come from checklists.', 'Each of the five scores uses a fixed checklist with fixed weights. It is shown only when at least half the checklist could be judged. Otherwise it says "Not enough evidence to score".'],
+    ['Not found is not the same as not real.', 'If we cannot find an award, degree or comment, we say "no public evidence found". We never say it does not exist.'],
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs" role="dialog" aria-modal="true" aria-label="How ExpertScan works">
       <div className="bg-white rounded-2xl border border-stone-200 max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 sm:p-8 shadow-xl text-stone-900">
         <div className="flex items-center justify-between pb-4 border-b border-stone-200 mb-6">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-5 h-5 text-stone-900" />
-            <h2 className="text-lg font-serif-luxury font-semibold text-stone-950">
-              ExpertScan Methodology
-            </h2>
+            <h2 className="text-lg font-semibold text-stone-950">How ExpertScan works</h2>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer"
-          >
+          <button onClick={onClose} aria-label="Close" className="p-1 rounded-lg text-stone-400 hover:text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="space-y-6 text-sm text-stone-700 leading-relaxed">
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider font-mono-code text-stone-900 mb-1 flex items-center gap-1.5">
-              <Eye className="w-4 h-4" />
-              1. The Perceptual Mirror ("The Way Others See You")
-            </h3>
-            <p>
-              Subject matter experts frequently suffer from the <em>"Curse of Knowledge"</em> and the <em>"Expert's Dilemma"</em>: they evaluate themselves based on internal depth and intent, whereas prospective enterprise clients, journalists, and event organizers form decisive impressions in the first 60 seconds of examining their digital presence. ExpertScan analyzes this exact delta.
-            </p>
-          </div>
+        <ol className="space-y-4 text-sm text-stone-700 leading-relaxed list-decimal pl-5">
+          {steps.map(([title, text]) => (
+            <li key={title}><strong className="text-stone-900">{title}</strong> {text}</li>
+          ))}
+        </ol>
 
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider font-mono-code text-stone-900 mb-1 flex items-center gap-1.5">
-              <Scale className="w-4 h-4" />
-              2. Fiske Stereotype Content Model (Warmth vs. Competence)
-            </h3>
-            <p>
-              Grounded in empirical social psychology (Susan Fiske et al., Princeton University), human social perception operates on two fundamental axes:
-            </p>
-            <ul className="list-disc pl-5 mt-2 space-y-1 text-xs">
-              <li><strong>Competence:</strong> Can this individual solve high-stakes challenges? (Signaled by published frameworks, rigor, and institutional associations).</li>
-              <li><strong>Warmth & Approachability:</strong> Does this individual have my best interests at heart? Is it pleasant and safe to work with them?</li>
-            </ul>
-            <p className="mt-2 text-xs">
-              Advisors who score excessively high on competence but low on warmth are perceived as distant technicians rather than trusted advisors, directly capping their pricing power.
-            </p>
-          </div>
-
-          <div>
-            <h3 className="text-sm font-semibold uppercase tracking-wider font-mono-code text-stone-900 mb-1 flex items-center gap-1.5">
-              <Search className="w-4 h-4" />
-              3. Web Grounding & Digital Authority Signals
-            </h3>
-            <p>
-              ExpertScan searches the public web, reads the pages it can open, and asks an AI to write the report from what it found. It looks at where you are mentioned, what the press and podcasts say, and how consistent your message is.
-            </p>
-          </div>
-
-          <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 text-xs">
-            <h4 className="font-semibold text-stone-900 mb-1">Our promise, and its limits</h4>
-            <p className="text-stone-600">
-              We tell the AI not to make things up, and to say "not found" when it cannot find something. We cannot promise it never makes a mistake. It only sees public pages, it can miss things, and some sites block us. Please check the sources.
-            </p>
-          </div>
+        <div className="mt-6 p-4 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-950">
+          <strong>Limits.</strong> ExpertScan only sees public pages. Some sites (LinkedIn, Facebook, Instagram, TikTok, Discord) block automatic reading, so their content is mostly missing. An AI writes the wording and can still make mistakes, so please check the sources.
         </div>
 
-        <div className="mt-8 pt-4 border-t border-stone-200 flex justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-stone-900 text-stone-50 text-xs font-medium rounded-lg hover:bg-stone-800 transition-colors cursor-pointer"
-          >
-            Close Framework
+        <div className="mt-6 pt-4 border-t border-stone-200 flex justify-end">
+          <button onClick={onClose} className="px-4 py-2 bg-stone-900 text-stone-50 text-xs font-medium rounded-lg hover:bg-stone-800 transition-colors cursor-pointer">
+            Close
           </button>
         </div>
       </div>
