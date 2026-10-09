@@ -10,13 +10,13 @@ export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onCl
   if (!isOpen) return null;
 
   const steps: [string, string][] = [
-    ['We search the public web.', 'We use several search engines, news, encyclopedia and research records (OpenAlex, ORCID, Crossref, Semantic Scholar), and we read the pages we can open. Pages you tick in the review step are read first. Pages you untick are never used.'],
-    ['Every source gets a number.', 'The AI may only use numbered sources. It is not allowed to invent sources, quotes, comments or people.'],
-    ['The server checks the AI.', 'Quotes and comments must be found word for word in the source, or they are removed or shown as "Not proven". A claim that only the person\'s own page supports is marked "Self-reported", not "Verified".'],
-    ['Every finding has a label.', 'Verified, self-reported, observed, inference, hypothesis or not proven. Click "Evidence" on any finding to see the source, the date we accessed it and the exact words.'],
-    ['Three views are kept apart.', 'How the person sees themself (only from their own answers), how they present themself (their own channels), and what independent sources show.'],
-    ['Scores come from checklists.', 'Each of the five scores uses a fixed checklist with fixed weights. It is shown only when at least half the checklist could be judged. Otherwise it says "Not enough evidence to score".'],
-    ['Not found is not the same as not real.', 'If we cannot find an award, degree or comment, we say "no public evidence found". We never say it does not exist.'],
+    ['We search the public web.', 'We use several search engines, news, encyclopedia and research records (OpenAlex, ORCID, Crossref, Semantic Scholar), and we read the pages we can open.'],
+    ['You check the pages first.', 'Other people may share your name. In the review step you tick the pages that are really yours and untick the rest. Pages you untick are not used.'],
+    ['An AI writes the report.', 'It writes from the pages we found. We tell it not to make things up and to say "not found" when it cannot find something. We cannot promise it never makes a mistake.'],
+    ['The scores and labels are opinions.', 'The AI chooses them from what it read. They are a starting point for thinking, not measurements and not a judgment about a person.'],
+    ['Not found is not the same as not real.', 'If we cannot find an award, a degree or a comment, it may still exist. Some of it is simply not public, or we could not read it.'],
+    ['Some sites block us.', 'LinkedIn, Facebook, Instagram, TikTok and Discord do not let us read them automatically, so their posts and comments are mostly missing.'],
+    ['Please check the sources.', 'The list of web pages used is at the end of the report. Open them and check anything important yourself.'],
   ];
 
   return (

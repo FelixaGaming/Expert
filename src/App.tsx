@@ -6,9 +6,7 @@ import { Disclaimer } from './components/Disclaimer';
 import { SettingsModal } from './components/SettingsModal';
 import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
-import { ExpertProfileInput, DiscoveredWebsite } from './types';
-import type { ReportV2 } from '../report-types';
-import { SELF_QUESTIONS } from './self-assessment';
+import { ExpertProfileInput, BehavioralReportData, DiscoveredWebsite } from './types';
 import {
   Sparkles,
   ArrowRight,
@@ -35,8 +33,6 @@ export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(getSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchRun, setSearchRun] = useState(0);
-  const [selfAnswers, setSelfAnswers] = useState<string[]>(SELF_QUESTIONS.map(() => ''));
-  const [showSelfQuestions, setShowSelfQuestions] = useState(false);
   const [stage, setStage] = useState<'search' | 'researching' | 'report'>('search');
   const [nameInput, setNameInput] = useState('');
   const [affiliationInput, setAffiliationInput] = useState('');
@@ -55,7 +51,7 @@ export default function App() {
   const [excludedWebsites, setExcludedWebsites] = useState<DiscoveredWebsite[]>([]);
   const [isLoadingWebsites, setIsLoadingWebsites] = useState(false);
 
-  const [reportData, setReportData] = useState<ReportV2 | null>(null);
+  const [reportData, setReportData] = useState<BehavioralReportData | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [currentAnalyzingName, setCurrentAnalyzingName] = useState('');
 
@@ -222,8 +218,6 @@ export default function App() {
     setShowOptionalDetails(false);
     setCurrentAnalyzingName('');
     setIsVerificationModalOpen(false);
-    setSelfAnswers(SELF_QUESTIONS.map(() => ''));
-    setShowSelfQuestions(false);
     setSearchRun((n) => n + 1);
   };
 
@@ -236,10 +230,7 @@ export default function App() {
       const response = await fetch('/api/analyze-presence', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...aiHeaders() },
-        body: JSON.stringify({
-          ...input,
-          selfAssessment: SELF_QUESTIONS.map((question, i) => ({ question, answer: selfAnswers[i] || '' })).filter((a) => a.answer.trim()),
-        }),
+        body: JSON.stringify(input),
       });
 
       const result = await response.json().catch(() => ({}));
@@ -464,36 +455,6 @@ export default function App() {
                           className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900 focus:bg-white"
                         />
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Optional self-assessment: the only way to learn how the person sees themself */}
-                <div className="pt-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowSelfQuestions(!showSelfQuestions)}
-                    className="inline-flex items-center gap-1.5 text-xs font-mono-code text-stone-600 hover:text-stone-900 transition-colors cursor-pointer py-1"
-                  >
-                    {showSelfQuestions ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                    <span>Optional: tell us how you see yourself (4 short questions)</span>
-                  </button>
-                  {showSelfQuestions && (
-                    <div className="mt-2.5 space-y-3 pt-3 border-t border-stone-200">
-                      <p className="text-xs text-stone-500">Only you can tell us this. Without your answers, the report cannot say how you see yourself and will not guess.</p>
-                      {SELF_QUESTIONS.map((q, i) => (
-                        <div key={q}>
-                          <label className="block text-[11px] text-stone-600 mb-1" htmlFor={`self-q-${i}`}>{q}</label>
-                          <textarea
-                            id={`self-q-${i}`}
-                            rows={2}
-                            maxLength={600}
-                            value={selfAnswers[i]}
-                            onChange={(e) => setSelfAnswers((prev) => prev.map((a, j) => (j === i ? e.target.value : a)))}
-                            className="w-full px-3 py-2 bg-stone-50 border border-stone-300 rounded-lg text-sm text-stone-900 focus:outline-none focus:ring-1 focus:ring-stone-900 focus:bg-white"
-                          />
-                        </div>
-                      ))}
                     </div>
                   )}
                 </div>

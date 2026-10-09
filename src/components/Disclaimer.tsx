@@ -1,6 +1,6 @@
 import React from 'react';
 import { Info } from 'lucide-react';
-import type { ReportCoverage } from '../../report-types';
+import { ReportCoverage } from '../types';
 
 // Plain-language note about how far the research went and how sure we can be
 export const Disclaimer: React.FC<{ variant?: 'short' | 'full'; coverage?: ReportCoverage }> = ({ variant = 'full', coverage }) => {
