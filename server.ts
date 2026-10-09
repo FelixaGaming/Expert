@@ -235,6 +235,19 @@ Respond STRICTLY with one JSON object and no markdown:
       }
     }
 
+    // Several LinkedIn or Facebook profiles with this name: none is pre-selected, the user chooses which one is theirs
+    for (const label of ['LinkedIn', 'Facebook']) {
+      const pf = PLATFORMS.find((x) => x.label === label)!;
+      const cands = websites.filter((w) => pf.host.test(hostOf(w.url)) && !w.id.includes('-search-') && pf.profile.test(pathOf(w.url)));
+      if (cands.length > 1) {
+        for (const w of cands) {
+          w.isConfirmed = false;
+          w.needsReview = true;
+          w.associationReason = `One of ${cands.length} ${label} profiles that may match this name. Choose the one that is yours.`;
+        }
+      }
+    }
+
     // Every social profile is added for the user to review, since people share names
     for (const w of websites) {
       if (PLATFORMS.some((pf) => pf.label !== 'Google Scholar' && pf.host.test(hostOf(w.url))) && !w.id.includes('-search-')) w.needsReview = true;
@@ -1034,7 +1047,7 @@ Respond strictly with a JSON object in this exact schema:
             url: w.url as string,
             title: typeof w.title === 'string' ? w.title : undefined,
             platform: typeof w.platform === 'string' ? w.platform : undefined,
-            scraped: [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || [])].filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 2600),
+            scraped: [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || [])].filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 20_000),
           };
         }),
         excludeUrls: (Array.isArray(excludedWebsites) ? excludedWebsites : []).filter((w: any) => w && typeof w.url === 'string').map((w: any) => w.url as string),

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { aiHeaders } from '../ai-settings';
+import { SocialIdentityPicker, IDENTITY_PLATFORMS, IdentityPlatform, isPlatform, isSearchLink } from './SocialIdentityPicker';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X,
@@ -57,6 +58,9 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
   // Filter text
   const [filterText, setFilterText] = useState('');
 
+  // Text the user pastes from their LinkedIn or Facebook profile (those sites block automatic reading)
+  const [pasted, setPasted] = useState<Record<string, string>>({});
+
   // Add custom URL inline form
   const [isAddingCustom, setIsAddingCustom] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
@@ -93,11 +97,14 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
   };
 
   const handleSelectAll = () => {
-    const next: Record<string, boolean> = {};
-    websites.forEach((w) => {
-      next[w.id] = true;
+    // LinkedIn and Facebook entries are chosen one by one in their own cards, so "select all" leaves them as they are
+    setSelectedMap((prev) => {
+      const next: Record<string, boolean> = { ...prev };
+      websites.forEach((w) => {
+        if (!IDENTITY_PLATFORMS.some((p) => isPlatform(w, p))) next[w.id] = true;
+      });
+      return next;
     });
-    setSelectedMap(next);
   };
 
   const handleDeselectAll = () => {
@@ -158,6 +165,32 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
         : (currentIndex - 1 + websites.length) % websites.length;
 
     handleOpenPreview(websites[nextIndex]);
+  };
+
+  // The user adds their own LinkedIn or Facebook link: it becomes their chosen profile for that platform
+  const handleAddPlatformLink = (platform: IdentityPlatform, rawUrl: string) => {
+    let url = rawUrl.trim();
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    let domain = platform.toLowerCase() + '.com';
+    try { domain = new URL(url).hostname.replace(/^www\./, ''); } catch { /* keep default */ }
+    const site: DiscoveredWebsite = {
+      id: `custom-${platform}-${Date.now()}`,
+      title: `${expertName} on ${platform} (link added by you)`,
+      url,
+      domain,
+      platform: `${platform} profile`,
+      snippet: 'A link you added yourself.',
+      isConfirmed: true,
+      associationReason: 'Added by the user',
+      isCustomAdded: true,
+    };
+    onAddCustomWebsite(site);
+    setSelectedMap((prev) => {
+      const next = { ...prev };
+      websites.filter((w) => isPlatform(w, platform) && !isSearchLink(w)).forEach((c) => { next[c.id] = false; });
+      next[site.id] = true;
+      return next;
+    });
   };
 
   // Add custom URL with optional auto-scrape
@@ -237,6 +270,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
   const potentialCollisionCount = websites.filter((w) => w.isPotentialCollision).length;
 
   const filteredWebsites = websites.filter((w) => {
+    if (IDENTITY_PLATFORMS.some((p) => isPlatform(w, p))) return false;
     if (!filterText.trim()) return true;
     const term = filterText.toLowerCase();
     return (
@@ -253,6 +287,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
     const excludedList: DiscoveredWebsite[] = [];
 
     websites.forEach((w) => {
+      if (isSearchLink(w)) return; // "search here" links are not pages about anyone
       const isChecked = selectedMap[w.id] ?? false;
       const cached = scrapedCache[w.id];
       const updatedSite = { ...w, isConfirmed: isChecked, ...(cached ? { scrapedData: cached } : {}) };
@@ -261,6 +296,26 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
       } else {
         excludedList.push(updatedSite);
       }
+    });
+
+    // Text pasted from a LinkedIn or Facebook profile is used as evidence written by the person
+    IDENTITY_PLATFORMS.forEach((platform) => {
+      const text = (pasted[platform] || '').trim();
+      if (!text) return;
+      const chosen = verifiedList.find((w) => isPlatform(w, platform));
+      const url = chosen?.url || `https://www.${platform.toLowerCase()}.com/#pasted-by-user`;
+      verifiedList.push({
+        id: `pasted-${platform}`,
+        title: `${platform} profile text pasted by ${expertName}`,
+        url: url.includes('#') ? url : `${url}#pasted-by-user`,
+        domain: `${platform.toLowerCase()}.com`,
+        platform: `${platform} (text pasted by you)`,
+        snippet: text.slice(0, 200),
+        isConfirmed: true,
+        associationReason: 'Pasted by the user',
+        isCustomAdded: true,
+        scrapedData: { url, domain: `${platform.toLowerCase()}.com`, platform, title: `${platform} profile`, snippet: text.slice(0, 300), bodySnippets: [text] },
+      });
     });
 
     onConfirm(verifiedList, excludedList);
@@ -468,6 +523,17 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
 
         {/* Scrollable Website Cards List */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+          {!isLoading && (
+            <SocialIdentityPicker
+              expertName={expertName}
+              websites={websites}
+              selectedMap={selectedMap}
+              setSelectedMap={setSelectedMap}
+              onAddLink={handleAddPlatformLink}
+              pasted={pasted}
+              setPasted={setPasted}
+            />
+          )}
           {isLoading ? (
             <div className="py-16 text-center space-y-4">
               <div className="w-10 h-10 border-2 border-stone-300 border-t-stone-900 rounded-full animate-spin mx-auto" />

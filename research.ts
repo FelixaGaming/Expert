@@ -720,7 +720,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const fromHits: SocialLink[] = hits.flatMap((h) => {
     const c = classifySocial(h.url);
     const hay = `${h.title} ${h.snippet} ${h.url}`.toLowerCase();
-    return c && tokens.every((t) => hay.includes(t)) ? [{ ...c, evidence: `Search result: ${h.title}` }] : [];
+    return c && tokens.every((t) => hay.includes(t)) ? [{ ...c, evidence: `${h.title}${h.snippet ? `: ${h.snippet.slice(0, 220)}` : ''}` }] : [];
   });
   const first = tokens[0] || '';
   const resemblesPerson = (l: SocialLink) => {
@@ -734,7 +734,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const perPlatform: Record<string, number> = {};
   const socials = [...trusted, ...fromHits, ...loose].filter((l) => {
     const key = normUrl(l.url);
-    if (isExcluded(l.url) || seenSocial.has(key) || (perPlatform[l.platform] || 0) >= 3) return false;
+    if (isExcluded(l.url) || seenSocial.has(key) || (perPlatform[l.platform] || 0) >= (l.platform === 'LinkedIn' || l.platform === 'Facebook' ? 8 : 3)) return false;
     seenSocial.add(key);
     perPlatform[l.platform] = (perPlatform[l.platform] || 0) + 1;
     return true;
