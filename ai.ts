@@ -17,6 +17,7 @@ export interface AiConfig {
 export interface AiResult {
   text: string;
   sources: { title: string; url: string }[];
+  socials?: { platform: string; url: string; evidence: string }[];
 }
 
 export const DEFAULT_MODELS: Record<Provider, string> = {
@@ -230,7 +231,7 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 // Runs the local `claude` CLI (your Claude login, no API key) Development only.
 // Claude gets NO tools: the server searches and hands it the results as text.
 async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
-  const { full: prompt, sources } = await withSearchContext(rawPrompt, search, query, research);
+  const { full: prompt, sources, socials } = await withSearchContext(rawPrompt, search, query, research);
   return new Promise((resolve, reject) => {
     const args = ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
@@ -250,7 +251,7 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
         if (/not logged in|login/i.test(msg)) return reject(new AiError('Claude is not signed in on this computer. Run `claude` in a terminal and log in.', 401, 'CLI_LOGIN'));
         return reject(new AiError(`Claude CLI error: ${String(msg).slice(0, 160)}`, 502, 'CLI_ERROR'));
       }
-      resolve({ text, sources });
+      resolve({ text, sources, socials });
     });
     child.stdin.end(prompt);
   });
@@ -263,7 +264,7 @@ async function withSearchContext(prompt: string, search: boolean, query?: string
     const pack = await gatherResearch(research, maxChars);
     console.log('research:', research.name, JSON.stringify(pack.stats));
     if (!pack.sources.length) throw new AiError('Web search is temporarily unavailable. Please try again in a few minutes.', 503, 'SEARCH_UNAVAILABLE');
-    return { full: `${intro}\n\nLIVE RESEARCH MATERIAL:\n\n${pack.context}\n\n---\nTASK:\n${prompt}`, sources: pack.sources };
+    return { full: `${intro}\n\nLIVE RESEARCH MATERIAL:\n\n${pack.context}\n\n---\nTASK:\n${prompt}`, sources: pack.sources, socials: pack.socials };
   }
   let sources: { title: string; url: string }[] = [];
   let full = prompt;
@@ -277,13 +278,13 @@ async function withSearchContext(prompt: string, search: boolean, query?: string
     const context = unique.map((h, i) => `[${i + 1}] ${h.title}\nURL: ${h.url}\n${h.snippet}`).join('\n\n').slice(0, Math.min(maxChars, 9000));
     full = `${intro}\n\nLIVE WEB SEARCH RESULTS:\n\n${context}\n\n---\nTASK:\n${prompt}`;
   }
-  return { full, sources };
+  return { full, sources, socials: undefined as AiResult['socials'] };
 }
 
 const MODEL_FALLBACKS = ['openai-fast', 'openai'];
 
 async function free(cfg: AiConfig, prompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
-  const { full, sources } = await withSearchContext(prompt, search, query, research, 9000);
+  const { full, sources, socials } = await withSearchContext(prompt, search, query, research, 9000);
   let lastErr = '';
   for (const model of [cfg.model, ...MODEL_FALLBACKS.filter((m) => m !== cfg.model)]) {
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -296,7 +297,7 @@ async function free(cfg: AiConfig, prompt: string, search: boolean, query?: stri
         });
         const json: any = await res.json().catch(() => ({}));
         const text = json?.choices?.[0]?.message?.content;
-        if (res.ok && typeof text === 'string' && text.trim()) return { text, sources: dedupe(sources) };
+        if (res.ok && typeof text === 'string' && text.trim()) return { text, sources: dedupe(sources), socials };
         lastErr = json?.error?.message || json?.error || `status ${res.status}`;
       } catch (e: any) {
         lastErr = e?.message || String(e);

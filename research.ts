@@ -16,9 +16,16 @@ export interface ResearchInput {
   depth?: 'profiles' | 'deep';
 }
 
+export interface SocialLink {
+  platform: string;
+  url: string;
+  evidence: string;
+}
+
 export interface ResearchPack {
   context: string;
   sources: { title: string; url: string }[];
+  socials: SocialLink[];
   stats: Record<string, number>;
 }
 
@@ -140,7 +147,7 @@ function paced(name: string, gapMs: number, run: (q: string) => Promise<RawHit[]
 }
 
 const markBlocked = (name: string) => {
-  (engineState[name] ||= { nextAt: 0, blockedUntil: 0 }).blockedUntil = Date.now() + 10 * 60_000;
+  (engineState[name] ||= { nextAt: 0, blockedUntil: 0 }).blockedUntil = Date.now() + 3 * 60_000;
 };
 
 const ENGINES: { name: string; run: (q: string) => Promise<RawHit[]> }[] = [
@@ -247,6 +254,128 @@ async function youtubeInfo(urls: string[]): Promise<string[]> {
   return rows.filter(Boolean);
 }
 
+// ---------- Social profile discovery (keyless) ----------
+
+const SOCIAL_HOSTS: { platform: string; host: RegExp }[] = [
+  { platform: 'LinkedIn', host: /(^|\.)linkedin\.com$/ },
+  { platform: 'Facebook', host: /(^|\.)facebook\.com$|^fb\.com$/ },
+  { platform: 'Instagram', host: /(^|\.)instagram\.com$/ },
+  { platform: 'TikTok', host: /(^|\.)tiktok\.com$/ },
+  { platform: 'X / Twitter', host: /(^|\.)(x|twitter)\.com$/ },
+  { platform: 'YouTube', host: /(^|\.)youtube\.com$|^youtu\.be$/ },
+  { platform: 'Discord', host: /(^|\.)discord\.(com|gg)$/ },
+  { platform: 'Reddit', host: /(^|\.)reddit\.com$/ },
+  { platform: 'Bluesky', host: /(^|\.)bsky\.app$/ },
+  { platform: 'Threads', host: /(^|\.)threads\.(net|com)$/ },
+  { platform: 'Mastodon', host: /(^|\.)mastodon\.[a-z]+$/ },
+  { platform: 'GitHub', host: /(^|\.)github\.com$/ },
+  { platform: 'Medium', host: /(^|\.)medium\.com$/ },
+  { platform: 'Substack', host: /(^|\.)substack\.com$/ },
+  { platform: 'Pinterest', host: /(^|\.)pinterest\.[a-z.]+$/ },
+  { platform: 'Google Scholar', host: /^scholar\.google\.[a-z.]+$/ },
+  { platform: 'ResearchGate', host: /(^|\.)researchgate\.net$/ },
+  { platform: 'ORCID', host: /(^|\.)orcid\.org$/ },
+];
+
+// Share buttons, trackers and site-wide links are not a person's profile
+const NOT_A_PROFILE = /\/(sharer|share|intent|tr|plugins|dialog|login|signup|policies|help|hashtag|explore|search|watch|feed|embed|oauth)(\/|\?|$)|shareArticle|\/company\/|\/school\/|\/pages\/|\/groups\/|\/events\//i;
+
+export function classifySocial(raw: string): { platform: string; url: string } | null {
+  let u: URL;
+  try { u = new URL(raw); } catch { return null; }
+  const host = u.hostname.replace(/^www\./, '').toLowerCase();
+  const hit = SOCIAL_HOSTS.find((h) => h.host.test(host));
+  if (!hit) return null;
+  const path = u.pathname.replace(/\/+$/, '');
+  if (path.length < 2 || NOT_A_PROFILE.test(u.pathname + u.search)) return null;
+  return { platform: hit.platform, url: `${u.protocol}//${u.hostname}${u.pathname}`.replace(/\/+$/, '') + (/profile\.php/.test(u.pathname) ? u.search : '') };
+}
+
+const WIKIDATA_PROPS: [string, (v: string) => string][] = [
+  ['P2002', (v) => `https://x.com/${v}`],
+  ['P2003', (v) => `https://www.instagram.com/${v}`],
+  ['P2013', (v) => `https://www.facebook.com/${v}`],
+  ['P6634', (v) => `https://www.linkedin.com/in/${v}`],
+  ['P7085', (v) => `https://www.tiktok.com/@${v}`],
+  ['P2397', (v) => `https://www.youtube.com/channel/${v}`],
+  ['P2037', (v) => `https://github.com/${v}`],
+  ['P3836', (v) => `https://www.pinterest.com/${v}`],
+  ['P4264', (v) => `https://www.linkedin.com/company/${v}`],
+  ['P496', (v) => `https://orcid.org/${v}`],
+  ['P1960', (v) => `https://scholar.google.com/citations?user=${v}`],
+  ['P2038', (v) => `https://www.researchgate.net/profile/${v}`],
+  ['P8904', (v) => `https://www.threads.net/@${v}`],
+  ['P11892', (v) => `https://bsky.app/profile/${v}`],
+];
+
+// Wikidata lists the official accounts of notable people. Returns also the person's Wikipedia title when there is one.
+async function wikidataSocials(name: string): Promise<{ socials: SocialLink[]; wikipediaTitle?: string }> {
+  const search = await getJson(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=en&limit=5&format=json`);
+  const candidates = (search?.search || []).filter((e: any) => (e.label || '').toLowerCase() === name.toLowerCase().trim());
+  const socials: SocialLink[] = [];
+  let wikipediaTitle: string | undefined;
+  for (const cand of candidates.slice(0, 2)) {
+    const ent = await getJson(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${cand.id}&props=claims|sitelinks&format=json`);
+    const e = ent?.entities?.[cand.id];
+    const claims = e?.claims || {};
+    const isHuman = (claims.P31 || []).some((c: any) => c.mainsnak?.datavalue?.value?.id === 'Q5');
+    if (!isHuman) continue;
+    wikipediaTitle ||= e?.sitelinks?.enwiki?.title;
+    for (const [prop, build] of WIKIDATA_PROPS) {
+      for (const c of (claims[prop] || []).slice(0, 1)) {
+        const v = c.mainsnak?.datavalue?.value;
+        if (typeof v !== 'string' || !v) continue;
+        const c2 = classifySocial(build(encodeURIComponent(v).replace(/%40/g, '@')));
+        if (c2) socials.push({ ...c2, evidence: `Listed on Wikidata (${cand.id}${cand.description ? `, ${cand.description}` : ''})` });
+      }
+    }
+    if (socials.length) break;
+  }
+  return { socials, wikipediaTitle };
+}
+
+async function wikipediaLinks(title: string): Promise<SocialLink[]> {
+  const j = await getJson(`https://en.wikipedia.org/w/api.php?action=query&prop=extlinks&titles=${encodeURIComponent(title)}&ellimit=500&format=json`);
+  const page: any = Object.values(j?.query?.pages || {})[0];
+  const out: SocialLink[] = [];
+  for (const l of page?.extlinks || []) {
+    const c = classifySocial(l['*'] || '');
+    if (c) out.push({ ...c, evidence: `Linked from the Wikipedia article "${title}"` });
+  }
+  return out;
+}
+
+async function youtubeChannels(name: string): Promise<SocialLink[]> {
+  const html = await getText(`https://www.youtube.com/results?search_query=${encodeURIComponent(name)}&sp=EgIQAg%253D%253D`);
+  if (!html) return [];
+  const m = html.match(/var ytInitialData = (\{.*?\});<\/script>/s);
+  if (!m) return [];
+  let data: any;
+  try { data = JSON.parse(m[1]); } catch { return []; }
+  const out: SocialLink[] = [];
+  const walk = (o: any) => {
+    if (!o || typeof o !== 'object' || out.length >= 3) return;
+    const ch = o.channelRenderer;
+    if (ch) {
+      const title = ch.title?.simpleText || '';
+      const path = ch.navigationEndpoint?.browseEndpoint?.canonicalBaseUrl;
+      const subs = ch.videoCountText?.simpleText || ch.subscriberCountText?.simpleText || '';
+      if (path && sameName(title, name)) out.push({ platform: 'YouTube', url: `https://www.youtube.com${path}`, evidence: `YouTube channel search: "${title}"${subs ? ` (${subs})` : ''}` });
+    }
+    for (const v of Array.isArray(o) ? o : Object.values(o)) walk(v);
+  };
+  walk(data);
+  return out;
+}
+
+async function blueskyProfiles(name: string): Promise<SocialLink[]> {
+  const j = await getJson(`https://public.api.bsky.app/xrpc/app.bsky.actor.searchActors?q=${encodeURIComponent(name)}&limit=5`);
+  return (j?.actors || [])
+    .filter((a: any) => sameName(`${a.displayName || ''} ${a.handle || ''}`.replace(/[._-]/g, ' '), name) || sameName((a.handle || '').split('.')[0], nameTokens(name).join('')))
+    .slice(0, 2)
+    .map((a: any) => ({ platform: 'Bluesky', url: `https://bsky.app/profile/${a.handle}`, evidence: `Bluesky search: ${a.displayName || a.handle}` }));
+}
+
 // ---------- Name helpers ----------
 
 function nameTokens(name: string): string[] {
@@ -292,11 +421,24 @@ async function candidateDomains(name: string): Promise<{ lines: string[]; source
 
 const UNREADABLE = /(linkedin|facebook|instagram|x|twitter|youtube|youtu|tiktok|pinterest|google|bing)\.(com|be)$/i;
 
-async function readPages(urls: string[]): Promise<string[]> {
+async function readPages(urls: string[], name: string): Promise<{ texts: string[]; socials: SocialLink[] }> {
+  const tokens = nameTokens(name);
+  const socials: SocialLink[] = [];
   const rows = await pool(urls, 5, async (u) => {
     const page = await safeFetchText(u, { timeoutMs: 9000 });
     if (!page || !/html/i.test(page.contentType)) return '';
     const $ = cheerio.load(page.text);
+    // Links to social profiles on pages that are about this person (their own sites, bios, directories)
+    const aboutThem = tokens.every((t) => page.text.toLowerCase().includes(t));
+    if (aboutThem) {
+      $('a[href]').each((_, a) => {
+        const href = $(a).attr('href') || '';
+        let abs = '';
+        try { abs = new URL(href, page.finalUrl).toString(); } catch { return; }
+        const c = classifySocial(abs);
+        if (c) socials.push({ ...c, evidence: `Linked from ${page.finalUrl}` });
+      });
+    }
     $('script, style, nav, footer, header, aside, form, noscript, svg').remove();
     const title = clean($('title').first().text());
     const desc = clean($('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '');
@@ -305,7 +447,7 @@ async function readPages(urls: string[]): Promise<string[]> {
     if (!title && !paras) return '';
     return `PAGE ${page.finalUrl}\nTitle: ${title}${desc ? `\nDescription: ${desc.slice(0, 300)}` : ''}${heads ? `\nHeadings: ${heads.slice(0, 400)}` : ''}\nText: ${paras}`;
   });
-  return rows.filter(Boolean);
+  return { texts: rows.filter(Boolean), socials };
 }
 
 // ---------- Orchestration ----------
@@ -335,11 +477,19 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     ...(deep ? [`${q} reviews testimonials`, `${q} news`] : []),
   ];
 
+  const plain = new Set<string>([q, ...(extra ? [`${q} ${extra}`] : [])]);
   const jobs: { engine: (typeof ENGINES)[number]; query: string }[] = queries.flatMap((query) => ENGINES.map((engine) => ({ engine, query })));
   const hitMap = new Map<string, Hit>();
   let engineFailures = 0;
   const perEngine: Record<string, { ok: number; empty: number }> = {};
   const junk: Record<string, number> = {};
+
+  // Keyless social discovery runs alongside the search engines
+  const socialDiscovery = (async () => {
+    const [wd, ytc, bsky] = await Promise.all([wikidataSocials(name), youtubeChannels(name), blueskyProfiles(name)]);
+    const wp = wd.wikipediaTitle ? await wikipediaLinks(wd.wikipediaTitle) : [];
+    return [...wd.socials, ...wp, ...ytc, ...bsky];
+  })().catch(() => [] as SocialLink[]);
 
   const structured = Promise.all([
     wikipedia(name), openAlex(name, affiliation), orcid(name), semanticScholar(name), crossref(name), github(name), googleNews(name), candidateDomains(name),
@@ -358,8 +508,12 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     const relevant = results.some((r) => `${r.title} ${r.snippet} ${r.url}`.toLowerCase().includes(lastName));
     if (results.length && !relevant) {
       results = [];
-      junk[asked] = (junk[asked] || 0) + 1;
-      if (junk[asked] >= 3) markBlocked(asked);
+      // Only a plain name search that returns nothing about the person signals throttling;
+      // platform-specific queries legitimately come back empty when the person has no profile there.
+      if (plain.has(query)) {
+        junk[asked] = (junk[asked] || 0) + 1;
+        if (junk[asked] >= 2) markBlocked(asked);
+      }
     }
     if (results.length) rec.ok++; else rec.empty++;
     if (!results.length) engineFailures++;
@@ -391,8 +545,10 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const [wiki, oa, orc, ss, cr, gh, news, domains] = await structured;
   const yt = await youtubeInfo(hits.map((h) => h.url));
 
+  // Read the top pages (own sites, bios, directories) for their text and for links to social profiles
   let pages: string[] = [];
-  if (deep) {
+  const pageSocials: SocialLink[] = [];
+  {
     const seen = new Set<string>();
     const toRead = hits
       .filter((h) => {
@@ -402,10 +558,39 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
         seen.add(host);
         return true;
       })
-      .slice(0, 10)
+      .slice(0, deep ? 10 : 6)
       .map((h) => h.url);
-    pages = await readPages(toRead);
+    const read = await readPages([...toRead, ...domains.sources.map((d) => d.url)], name);
+    if (deep) pages = read.texts;
+    pageSocials.push(...read.socials);
   }
+
+  // Merge every social profile found, strongest evidence first, no duplicates, at most 3 per platform
+  const fromHits: SocialLink[] = hits.flatMap((h) => {
+    const c = classifySocial(h.url);
+    const hay = `${h.title} ${h.snippet} ${h.url}`.toLowerCase();
+    return c && tokens.every((t) => hay.includes(t)) ? [{ ...c, evidence: `Search result: ${h.title}` }] : [];
+  });
+  // Links gathered from articles and directories often point at the publisher's own accounts.
+  // Keep one only if the account name resembles the person's name.
+  const first = tokens[0] || '';
+  const resemblesPerson = (l: SocialLink) => {
+    const handle = decodeURIComponent(l.url.replace(/^https?:\/\/[^/]+\//, '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+    return (lastToken.length >= 3 && handle.includes(lastToken)) || (first.length >= 4 && handle.includes(first));
+  };
+  const discovered = await socialDiscovery;
+  const trusted = discovered.filter((l) => /^Listed on Wikidata|^YouTube channel search|^Bluesky search/.test(l.evidence));
+  const loose = [...discovered.filter((l) => !trusted.includes(l)), ...pageSocials].filter(resemblesPerson);
+  const ranked = [...trusted, ...fromHits, ...loose];
+  const seenSocial = new Set<string>();
+  const perPlatform: Record<string, number> = {};
+  const socials = ranked.filter((l) => {
+    const key = l.url.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/^twitter\.com/, 'x.com');
+    if (seenSocial.has(key) || (perPlatform[l.platform] || 0) >= 3) return false;
+    seenSocial.add(key);
+    perPlatform[l.platform] = (perPlatform[l.platform] || 0) + 1;
+    return true;
+  });
 
   const sections: string[] = [];
   sections.push(`SEARCH HITS (${hits.length}, ranked by relevance and by how many engines returned them):\n` +
@@ -417,6 +602,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   if (yt.length) sections.push(`YOUTUBE:\n${yt.join('\n')}`);
   if (gh.length) sections.push(`CODE PROFILES:\n${gh.join('\n')}`);
   if (domains.lines.length) sections.push(`DOMAINS NAMED AFTER THE PERSON:\n${domains.lines.join('\n')}`);
+  if (socials.length) sections.push(`SOCIAL PROFILE LINKS FOUND (each with the evidence it came from; verify before trusting, people share names):\n${socials.map((l) => `${l.platform}: ${l.url} | ${l.evidence}`).join('\n')}`);
   if (pages.length) sections.push(`FULL PAGE EXCERPTS:\n${pages.join('\n\n')}`);
 
   let context = sections.join('\n\n=====\n\n');
@@ -433,6 +619,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   return {
     context,
     sources: uniqueSources,
+    socials,
     stats: {
       queries: jobs.length,
       failedQueries: engineFailures,
@@ -442,6 +629,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
       youtube: yt.length,
       domains: domains.sources.length,
       pagesRead: pages.length,
+      socials: socials.length,
       ...Object.fromEntries(Object.entries(perEngine).flatMap(([k, v]) => [[`${k}Ok`, v.ok], [`${k}Empty`, v.empty]])),
     },
   };

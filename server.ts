@@ -182,6 +182,22 @@ Respond STRICTLY with one JSON object and no markdown:
     ];
     const hostOf = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
     const pathOf = (u: string) => { try { return new URL(u).pathname; } catch { return ''; } };
+    // Profiles found by the keyless discovery (Wikidata, Wikipedia, own sites, YouTube, Bluesky, search results)
+    const normUrl = (u: string) => u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/^twitter\.com/, 'x.com').replace(/\/+$/, '');
+    for (const soc of response.socials || []) {
+      if (websites.some((w) => normUrl(w.url) === normUrl(soc.url))) continue;
+      websites.push({
+        id: `web-${soc.platform}-${websites.length}-${Date.now()}`,
+        title: `${soc.platform} profile`,
+        url: soc.url,
+        domain: hostOf(soc.url),
+        platform: soc.platform,
+        snippet: soc.evidence,
+        isConfirmed: true,
+        needsReview: true,
+        associationReason: soc.evidence,
+      });
+    }
     for (const pf of PLATFORMS) {
       const alreadyListed = websites.some((w) => pf.host.test(hostOf(w.url)));
       if (alreadyListed) continue;
