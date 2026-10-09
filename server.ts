@@ -553,6 +553,12 @@ ${
     : ''
 }
 
+COMPLETENESS RULES (do not underestimate the person):
+- The material contains the FULL text of the pages the user confirmed, and other pages of the same sites. Read all of it before writing.
+- List EVERY award, recognition, talk, presentation, keynote, conference, publication, advisory or board role, committee, media appearance and project you find there, each with its year and organization. Do not summarize several items into one, and do not leave any out.
+- Never say something was "not found" if it appears anywhere in the material. Check the confirmed pages first.
+- Base the strengths and the public image on all of this evidence, not only on the first lines of a page.
+
 RESEARCH & MIRROR SYNTHESIS MANDATE:
 1. Use web search to run comprehensive searches on this person:
    - Search: "${cleanName}" "${resolvedAffiliation}"
@@ -1016,7 +1022,23 @@ Respond strictly with a JSON object in this exact schema:
   }
 }`;
 
-      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), { name: cleanName, affiliation: affiliation?.trim(), domain: domain?.trim(), depth: 'deep' });
+      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), {
+        name: cleanName,
+        affiliation: affiliation?.trim(),
+        domain: domain?.trim(),
+        depth: 'deep',
+        // Pages the user confirmed are read in full (with the rest of their site); pages they excluded are never used
+        seeds: (Array.isArray(verifiedWebsites) ? verifiedWebsites : []).filter((w: any) => w && typeof w.url === 'string').slice(0, 25).map((w: any) => {
+          const d = w.scrapedData || {};
+          return {
+            url: w.url as string,
+            title: typeof w.title === 'string' ? w.title : undefined,
+            platform: typeof w.platform === 'string' ? w.platform : undefined,
+            scraped: [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || [])].filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 2600),
+          };
+        }),
+        excludeUrls: (Array.isArray(excludedWebsites) ? excludedWebsites : []).filter((w: any) => w && typeof w.url === 'string').map((w: any) => w.url as string),
+      });
       const responseText = response.text;
       const webSources = response.sources;
 

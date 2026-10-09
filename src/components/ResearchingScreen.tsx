@@ -43,7 +43,7 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
       </h2>
 
       <p className="text-sm text-stone-600 mb-8 max-w-md mx-auto">
-        We are reading public information to show how others may see you. This usually takes 3 to 5 minutes. Please keep this page open.
+        We are reading public information to show how others may see you. This usually takes 5 to 8 minutes. Please keep this page open.
       </p>
 
       {/* Progress Steps */}

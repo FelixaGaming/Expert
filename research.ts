@@ -455,33 +455,62 @@ async function candidateDomains(name: string): Promise<{ lines: string[]; source
 
 const UNREADABLE = /(linkedin|facebook|instagram|x|twitter|youtube|youtu|tiktok|pinterest|google|bing)\.(com|be)$/i;
 
-async function readPages(urls: string[], name: string): Promise<{ texts: string[]; socials: SocialLink[] }> {
+const SITE_PAGE_KEYWORDS = /award|recogni|speak|present|talk|keynote|media|press|publication|research|about|cv|bio|experience|portfolio|news|event|testimon|workshop|consult|service|advis|board|honou?r|interview|podcast|webinar|article|book/i;
+const SKIP_EXT = /\.(jpg|jpeg|png|gif|svg|webp|css|js|zip|mp4|mp3|ico|woff2?)(\?|$)/i;
+
+// Full text of a page in reading order, keeping lists and cards (awards, talks, roles live there)
+function fullPageText($: cheerio.CheerioAPI): string {
+  $('script, style, noscript, svg, form, iframe').remove();
+  $('p, div, li, h1, h2, h3, h4, h5, h6, tr, br, section, article, blockquote').each((_, el) => { $(el).append('\n'); });
+  return $('body').text().replace(/[ \t\u00a0]+/g, ' ').replace(/\s*\n\s*/g, '\n').replace(/\n{2,}/g, '\n').trim();
+}
+
+// `fullSet` holds normalized URLs to read in full (the user's confirmed pages and own sites); others get a short excerpt.
+async function readPages(urls: string[], name: string, fullSet: Set<string> = new Set()): Promise<{ texts: string[]; socials: SocialLink[]; internal: string[] }> {
   const tokens = nameTokens(name);
   const socials: SocialLink[] = [];
+  const internal: string[] = [];
   const rows = await pool(urls, 5, async (u) => {
-    const page = await safeFetchText(u, { timeoutMs: 9000 });
+    const page = await safeFetchText(u, { timeoutMs: 12000, maxBytes: fullSet.has(normUrl(u)) ? 1_500_000 : 400_000 });
     if (!page || !/html/i.test(page.contentType)) return '';
     const $ = cheerio.load(page.text);
+    const isFull = fullSet.has(normUrl(u));
     // Links to social profiles on pages that are about this person (their own sites, bios, directories)
     const aboutThem = tokens.every((t) => page.text.toLowerCase().includes(t));
-    if (aboutThem) {
-      $('a[href]').each((_, a) => {
-        const href = $(a).attr('href') || '';
-        let abs = '';
-        try { abs = new URL(href, page.finalUrl).toString(); } catch { return; }
+    const host = new URL(page.finalUrl).hostname.replace(/^www\./, '');
+    $('a[href]').each((_, a) => {
+      const href = $(a).attr('href') || '';
+      let abs = '';
+      try { abs = new URL(href, page.finalUrl).toString(); } catch { return; }
+      if (aboutThem) {
         const c = classifySocial(abs);
         if (c) socials.push({ ...c, evidence: `Linked from ${page.finalUrl}` });
-      });
-    }
-    $('script, style, nav, footer, header, aside, form, noscript, svg').remove();
+      }
+      // Other pages of the same site, so the whole site can be read (awards, talks and so on are often on their own pages)
+      if (isFull) {
+        try {
+          const l = new URL(abs);
+          if (l.hostname.replace(/^www\./, '') === host && /^https?:$/.test(l.protocol) && l.pathname.length > 1 && !SKIP_EXT.test(l.pathname)) {
+            l.hash = '';
+            internal.push(l.toString());
+          }
+        } catch { /* ignore bad links */ }
+      }
+    });
     const title = clean($('title').first().text());
     const desc = clean($('meta[name="description"]').attr('content') || $('meta[property="og:description"]').attr('content') || '');
+    if (isFull) {
+      const text = fullPageText($).slice(0, 40_000);
+      if (!title && !text) return '';
+      return `PAGE ${page.finalUrl}\nTitle: ${title}${desc ? `\nDescription: ${desc.slice(0, 300)}` : ''}\nText:\n${text}`;
+    }
+    $('script, style, nav, footer, header, aside, form, noscript, svg').remove();
     const heads = $('h1, h2, h3').slice(0, 8).map((_, e) => clean($(e).text())).get().filter(Boolean).join(' / ');
-    const paras = $('p').map((_, e) => clean($(e).text())).get().filter((p) => p.length > 60).join(' ').slice(0, 2200);
+    const paras = $('p, li').map((_, e) => clean($(e).text())).get().filter((p) => p.length > 40).join(' ').slice(0, 4000);
     if (!title && !paras) return '';
     return `PAGE ${page.finalUrl}\nTitle: ${title}${desc ? `\nDescription: ${desc.slice(0, 300)}` : ''}${heads ? `\nHeadings: ${heads.slice(0, 400)}` : ''}\nText: ${paras}`;
   });
-  return { texts: rows.filter(Boolean), socials };
+  return { texts: rows.filter(Boolean), socials, internal };
 }
 
 // ---------- Peers (comparable experts) ----------
@@ -658,7 +687,27 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
       .map((h) => h.url),
     ...domains.sources.map((d) => d.url),
   ];
-  const read = await readPages([...new Set(toRead)], name);
+  // Own sites (pages the user confirmed, and domains named after the person) are read in full, then their other pages too
+  const fullSet = new Set<string>([
+    ...seeds.map((sd) => normUrl(sd.url)),
+    ...domains.sources.map((d) => normUrl(d.url)),
+  ]);
+  const read = await readPages([...new Set(toRead)], name, fullSet);
+  const alreadyRead = new Set(toRead.map(normUrl));
+  const ownPages = new Set<string>(fullSet);
+  if (fullSet.size) {
+    const rank = (u: string) => (SITE_PAGE_KEYWORDS.test(new URL(u).pathname) ? 1 : 0);
+    const more = [...new Set(read.internal)]
+      .filter((u) => !alreadyRead.has(normUrl(u)) && !isExcluded(u))
+      .sort((a, b) => rank(b) - rank(a))
+      .slice(0, 16);
+    if (more.length) {
+      more.forEach((u) => { fullSet.add(normUrl(u)); ownPages.add(normUrl(u)); });
+      const crawled = await readPages(more, name, fullSet);
+      read.texts.push(...crawled.texts);
+      read.socials.push(...crawled.socials);
+    }
+  }
   const pageSocials = read.socials;
 
   // Peers: who else works in this field (never the person themself)
@@ -707,12 +756,14 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const add = (kind: string, url: string, title: string, text: string, opts: { published?: string; flags?: string[]; selfAuthored?: boolean } = {}) => {
     if (!url || isExcluded(url)) return;
     const key = normUrl(url);
-    const clipped = text.slice(0, kind === 'page' || kind === 'your confirmed page' ? 2600 : 600);
+    const big = kind === 'your confirmed page' || kind === 'own site page';
+    const clipped = text.slice(0, big ? 40_000 : kind === 'page' ? 4000 : 600);
     const existing = idByUrl.get(key);
     if (existing) {
-      if (!corpus[existing].includes(clipped.slice(0, 80))) corpus[existing] += `\n${clipped}`.slice(0, 3200);
+      // The full page text goes first, ahead of any short summary that was already stored
+      if (!corpus[existing].includes(clipped.slice(0, 80))) corpus[existing] = (big ? `${clipped}\n${corpus[existing]}` : `${corpus[existing]}\n${clipped}`).slice(0, big ? 40_000 : 4000);
       const rec = register.find((r) => r.id === existing)!;
-      if ((kind === 'page' || kind === 'your confirmed page') && rec.kind === 'search result') {
+      if ((kind === 'page' || big) && rec.kind === 'search result') {
         rec.kind = kind;
         rec.flags = rec.flags.filter((f) => f !== 'Only a search snippet: the page itself was not read');
       }
@@ -733,7 +784,12 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   for (const sd of seeds) add('your confirmed page', sd.url, sd.title || sd.url, sd.scraped || sd.title || '', { selfAuthored: OWN_PLATFORM.test(sd.platform || '') || undefined });
   for (const w of wiki) { const u = w.match(/\((https?:\/\/[^)\s]+)\)/)?.[1]; if (u) add('encyclopedia', u, w.split('\n')[0], w); }
   for (const line of [...oa, ...orc, ...ss, ...cr]) { const u = line.match(/https?:\/\/[^\s)]+/)?.[0]; if (u) add('scholarly record', u, line.split('\n')[0].slice(0, 120), line); }
-  for (const t of read.texts) { const u = t.match(/^PAGE (\S+)/)?.[1]; if (u) add('page', u, t.match(/\nTitle: (.*)/)?.[1] || u, t.split('\n').slice(1).join('\n')); }
+  for (const t of read.texts) {
+    const u = t.match(/^PAGE (\S+)/)?.[1];
+    if (!u) continue;
+    const kind = seedUrls.has(normUrl(u)) ? 'your confirmed page' : ownPages.has(normUrl(u)) ? 'own site page' : 'page';
+    add(kind, u, t.match(/\nTitle: (.*)/)?.[1] || u, t.split('\n').slice(1).join('\n'), kind === 'own site page' ? { selfAuthored: true } : {});
+  }
   for (const n of news.lines) { const parts = n.split(' | '); const u = parts[parts.length - 1]; add('news', u, parts[0], `${parts[0]} (${parts[1]}, ${parts[2]})`, { published: parts[2] }); }
   for (const l of socials) add('social profile', l.url, `${l.platform} profile`, `${l.platform} profile. ${l.evidence}`);
   for (const y of yt) { const u = y.match(/https?:\/\/\S+$/)?.[0]; if (u) add('video', u, y.slice(0, 100), y); }
@@ -754,7 +810,7 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     return `${title}\n` + items.map((r) => `[${r.id}] ${r.title}\nKind: ${r.kind}${r.flags.length ? ` | Warnings: ${r.flags.join('; ')}` : ''}\nURL: ${r.url}\n${corpus[r.id]}`).join('\n\n');
   };
   const sections = [
-    group('PAGES THE USER CONFIRMED ARE THEIR OWN OR ABOUT THEM:', ['your confirmed page']),
+    group('PAGES THE USER CONFIRMED ARE THEIR OWN OR ABOUT THEM, AND OTHER PAGES OF THE SAME SITES (read in full):', ['your confirmed page', 'own site page']),
     group('ENCYCLOPEDIA:', ['encyclopedia']),
     group('SCHOLARLY RECORDS (OpenAlex, ORCID, Semantic Scholar, Crossref):', ['scholarly record']),
     group('FULL PAGES READ:', ['page']),

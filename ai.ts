@@ -238,7 +238,7 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
-    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 540_000);
+    const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, 900_000);
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', () => { clearTimeout(timer); reject(new AiError('The `claude` command was not found on this computer.', 503, 'CLI_MISSING')); });
@@ -259,7 +259,7 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
 }
 
 // Runs DuckDuckGo searches on the server and prepends the results, so a model with no web tools can still use live data.
-async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 70_000) {
+async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 120_000) {
   const intro = 'You have no browsing tools. The web research has already been done for you: the material below was gathered live and is your only source of facts. Where the task says to search the web, use this material instead. Cite only URLs that appear in it. If the material does not support a claim, say it is not found rather than inventing it. The material may include namesakes (other people with the same name): use affiliation, field and location to separate them, and flag doubtful matches. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.';
   if (search && research) {
     const pack = await gatherResearch(research, maxChars);
