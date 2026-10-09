@@ -7,12 +7,12 @@ interface ResearchingScreenProps {
 }
 
 const STEPS = [
-  'Starting ExpertScan...',
-  'Reflecting longitudinal presence & evolution throughout the years...',
-  'Gathering audience reactions & comments on LinkedIn, FB, and community discussions...',
-  'Evaluating schools, degrees, work milestones, awards & challenges...',
-  'Connecting verified websites & ruling out unrelated namesakes...',
-  'Polishing the mirror: Comparing how people see you vs. how you perceive yourself...',
+  'Searching the web for pages about you...',
+  'Looking for your profiles on social media...',
+  'Reading the pages we found...',
+  'Checking for other people with the same name...',
+  'Writing your report. This is the longest step...',
+  'Almost done. Please keep this page open...',
 ];
 
 export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName }) => {
@@ -21,7 +21,7 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentStepIndex((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
-    }, 1800);
+    }, 35000);
     return () => clearInterval(interval);
   }, []);
 
@@ -35,15 +35,15 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
       </div>
 
       <div className="text-xs font-mono-code uppercase tracking-wider text-stone-500 mb-2">
-        Automated Behavioral Research
+        Working on your report
       </div>
 
       <h2 className="text-2xl sm:text-3xl font-serif-luxury font-medium text-stone-900 mb-4">
-        Analyzing Public Footprint for <span className="underline decoration-stone-300">{expertName}</span>
+        Building a report for <span className="underline decoration-stone-300">{expertName}</span>
       </h2>
 
       <p className="text-sm text-stone-600 mb-8 max-w-md mx-auto">
-        Evaluating available public data to reveal how prospective clients, peers, and media see you.
+        We are reading public information to show how others may see you. This usually takes 3 to 5 minutes. Please keep this page open.
       </p>
 
       {/* Progress Steps */}
@@ -76,7 +76,7 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
       </div>
 
       <div className="mt-8 text-xs font-mono-code text-stone-400">
-        Strict Grounding • Zero Invented Facts
+        We only use what we find online, so some details may be missing
       </div>
     </div>
   );

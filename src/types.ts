@@ -234,7 +234,16 @@ export interface EvaluatedCommentsAndFeedback {
   };
 }
 
+export interface ReportCoverage {
+  sourcesUsed: number;
+  pagesRead: number;
+  platformsFound: string[];
+  platformsNotFound: string[];
+  searchLimited: boolean;
+}
+
 export interface BehavioralReportData {
+  coverage?: ReportCoverage;
   subjectName: string;
   primaryArchetype: string;
   archetypeTagline: string;

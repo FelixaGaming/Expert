@@ -22,7 +22,16 @@ export interface SocialLink {
   evidence: string;
 }
 
+export interface ResearchCoverage {
+  sourcesUsed: number;
+  pagesRead: number;
+  platformsFound: string[];
+  platformsNotFound: string[];
+  searchLimited: boolean;
+}
+
 export interface ResearchPack {
+  coverage: ResearchCoverage;
   context: string;
   sources: { title: string; url: string }[];
   socials: SocialLink[];
@@ -616,7 +625,18 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
   const seenUrl = new Set<string>();
   const uniqueSources = sources.filter((s) => !seenUrl.has(s.url) && seenUrl.add(s.url));
 
+  const CHECKED = ['LinkedIn', 'Facebook', 'Instagram', 'TikTok', 'X / Twitter', 'YouTube', 'Discord', 'Reddit'];
+  const found = new Set(socials.map((l) => l.platform));
+  const coverage: ResearchCoverage = {
+    sourcesUsed: uniqueSources.length,
+    pagesRead: pages.length,
+    platformsFound: CHECKED.filter((p) => found.has(p)),
+    platformsNotFound: CHECKED.filter((p) => !found.has(p)),
+    searchLimited: jobs.length > 0 && engineFailures / jobs.length > 0.5,
+  };
+
   return {
+    coverage,
     context,
     sources: uniqueSources,
     socials,

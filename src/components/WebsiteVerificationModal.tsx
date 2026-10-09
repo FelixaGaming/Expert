@@ -283,13 +283,13 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
           <div>
             <div className="flex items-center gap-2 text-xs font-mono-code text-stone-600 uppercase tracking-wider mb-1.5">
               <Globe className="w-4 h-4 text-emerald-600" />
-              <span>Web Discovery & Source Verification</span>
+              <span>Check the pages we found</span>
             </div>
             <h2 className="text-xl sm:text-2xl font-serif-luxury font-medium text-stone-900 leading-tight">
-              Review, Preview & Add Discovered Sources for {expertName || 'Subject'}
+              Are these pages really about {expertName || 'you'}?
             </h2>
             <p className="text-xs sm:text-sm text-stone-600 mt-1 max-w-2xl leading-relaxed">
-              Preview candidate websites to verify they truly belong to you. Uncheck namesakes or add extra links (LinkedIn, Facebook, personal sites) so only 100% authentic data is scraped.
+              We found these pages by searching the web. Other people may share your name, so please check them. Untick any page that is not yours. If a page is missing, add its link yourself. Pages marked "Needs your review" were found automatically and may be wrong.
             </p>
           </div>
 
@@ -307,7 +307,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
           <div className="flex flex-wrap items-center gap-2 text-xs font-mono-code">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100/80 text-emerald-900 border border-emerald-300/80 rounded-md font-medium">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
-              {confirmedCount} Verified to Scrape
+              {confirmedCount} pages selected
             </span>
             {excludedCount > 0 && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-stone-200 text-stone-700 border border-stone-300 rounded-md">
@@ -654,7 +654,7 @@ export const WebsiteVerificationModal: React.FC<WebsiteVerificationModalProps> =
               className="px-6 py-2.5 bg-stone-900 hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed text-stone-50 text-xs font-mono-code uppercase font-medium rounded-xl transition-colors shadow-xs cursor-pointer inline-flex items-center gap-1.5"
             >
               <Check className="w-4 h-4" />
-              <span>Confirm & Scrape Verified Sources ({confirmedCount})</span>
+              <span>Use these {confirmedCount} pages and create my report</span>
             </button>
           </div>
         </div>

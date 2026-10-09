@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Disclaimer } from './Disclaimer';
 import {
   BarChart,
   Bar,
@@ -109,7 +110,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block animate-pulse" />
             <span className="text-xs font-mono-code uppercase tracking-wider text-stone-600">
-              The Public Perception Mirror • 100% Verified Presence Analysis
+              ExpertScan report • based on public information
             </span>
           </div>
 
@@ -120,7 +121,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-mono-code text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-lg transition-colors cursor-pointer"
             >
               <ShieldCheck className="w-3.5 h-3.5 text-stone-900" />
-              <span>Perception Framework</span>
+              <span>How we work</span>
             </button>
 
             <button
@@ -130,7 +131,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               title="Download JSON record"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">JSON Record</span>
+              <span className="hidden sm:inline">Download data</span>
             </button>
 
             <button
@@ -139,7 +140,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-stone-50 bg-stone-900 hover:bg-stone-800 rounded-lg transition-colors cursor-pointer shadow-sm"
             >
               <Printer className="w-3.5 h-3.5" />
-              <span>Export / Print PDF</span>
+              <span>Print or save as PDF</span>
             </button>
 
             <button
@@ -149,7 +150,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               title="Analyze another profile"
             >
               <RotateCcw className="w-3.5 h-3.5" />
-              <span>New Analysis</span>
+              <span>New search</span>
             </button>
           </div>
         </div>
@@ -157,7 +158,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
         {/* Section View Filter Bar */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs font-mono-code">
           <span className="text-stone-400 mr-1 flex items-center gap-1">
-            <Filter className="w-3 h-3" /> Focus View:
+            <Filter className="w-3 h-3" /> Show:
           </span>
           <button
             onClick={() => setActiveTab('all')}
@@ -167,7 +168,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            All Sections (Complete Reflection)
+            Everything
           </button>
           <button
             id="tab-btn-mirror"
@@ -179,7 +180,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             }`}
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-            <span>The Perception Mirror (Self vs. World)</span>
+            <span>You vs. the public</span>
           </button>
           <button
             id="tab-btn-self-account"
@@ -191,7 +192,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             }`}
           >
             <Mic className="w-3.5 h-3.5 text-amber-600" />
-            <span>Self-Account (Interviews & Social)</span>
+            <span>In your own words</span>
           </button>
           <button
             id="tab-btn-comments"
@@ -203,7 +204,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             }`}
           >
             <MessageCircle className="w-3.5 h-3.5 text-blue-600" />
-            <span>Comments & Feedback Evaluation</span>
+            <span>Comments and feedback</span>
           </button>
           <button
             onClick={() => setActiveTab('reflection')}
@@ -213,7 +214,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Deep Insight Synthesis
+            The deeper picture
           </button>
           <button
             id="tab-btn-discourse"
@@ -224,7 +225,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Social Feedback & Evolution
+            Social media and change over time
           </button>
           <button
             onClick={() => setActiveTab('presence')}
@@ -234,7 +235,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Virtual Presence Matrix
+            Where you show up online
           </button>
           <button
             onClick={() => setActiveTab('sources')}
@@ -254,7 +255,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            Perception Dimensions
+            Your scores
           </button>
           <button
             onClick={() => setActiveTab('roadmap')}
@@ -264,10 +265,12 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
             }`}
           >
-            90-Day Presence Growth Plan
+            90-day plan
           </button>
         </div>
       </div>
+
+      <Disclaimer coverage={report.coverage} />
 
       {/* Main Executive Document */}
       <div className="bg-white rounded-2xl border border-stone-200 shadow-sm p-6 sm:p-10 text-stone-900">
@@ -282,14 +285,14 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 {report.subjectName}
               </h1>
               <p className="text-sm text-stone-600 mt-1 font-sans">
-                A friendly, comprehensive mirror comparing how you perceive yourself with how people actually see you throughout the years across LinkedIn, Facebook, and the web.
+                A friendly look at how you see yourself compared with how others may see you, based on public pages we could find.
               </p>
             </div>
 
             <div className="text-left sm:text-right font-mono-code text-xs text-stone-500 shrink-0">
               <div>Reflection Date: {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
               <div>Mirror ID: PM-REFLECT-{Math.abs(report.overallPresenceQuotient * 137 + 419)}</div>
-              <div className="text-emerald-700 font-semibold mt-1">Status: 100% Verified Profile</div>
+              <div className="text-amber-800 font-semibold mt-1">Status: please check the sources yourself</div>
             </div>
           </div>
         </header>
@@ -300,7 +303,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             {/* Presence Score */}
             <div className="flex flex-col items-center md:items-start border-b md:border-b-0 md:border-r border-stone-200 pb-6 md:pb-0 md:pr-6">
               <div className="text-xs font-mono-code text-stone-500 uppercase tracking-wider mb-2">
-                Market Perception Readiness
+                How ready your image is for clients
               </div>
               <div className="flex items-baseline gap-2">
                 <span className="text-5xl sm:text-6xl font-serif-luxury font-bold text-stone-900">
@@ -321,7 +324,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             <div className="md:col-span-2 space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-mono-code uppercase px-2.5 py-1 bg-stone-900 text-stone-50 rounded-md font-medium">
-                  Public Archetype
+                  Your public type
                 </span>
                 <span className="text-lg font-serif-luxury font-semibold text-stone-900">
                   {report.primaryArchetype}
@@ -335,7 +338,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div className="pt-2 border-t border-stone-200/80">
                 <div className="text-xs font-semibold uppercase tracking-wider font-mono-code text-stone-700 mb-1 flex items-center gap-1.5">
                   <Eye className="w-3.5 h-3.5 text-stone-900" />
-                  <span>The Way Others See You (Outer 60-Second Impression)</span>
+                  <span>How others see you in the first minute</span>
                 </div>
                 <p className="text-xs sm:text-sm text-stone-700 leading-relaxed">
                   {report.outerImpression}
@@ -360,10 +363,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             <div className="mb-6">
               <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-amber-900 bg-amber-100/90 inline-block px-3 py-1 rounded-md mb-2 border border-amber-200">
                 <Sparkles className="w-3.5 h-3.5 inline mr-1 text-amber-700" />
-                The Perception Mirror
+                You vs. the public
               </div>
               <h2 className="text-2xl font-serif-luxury font-semibold text-stone-900">
-                Who You Think You Are vs. How People Actually See You
+                How you see yourself vs. how others see you
               </h2>
               <p className="text-xs sm:text-sm text-stone-600 font-sans mt-1 max-w-3xl leading-relaxed">
                 Like holding up a friendly, honest mirror: this brings together how you perceive your own life and work with how others genuinely see and respond to you across social media comments, peer feedback, education, career history, and public records.
@@ -378,10 +381,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="flex items-center justify-between pb-3 border-b border-amber-200/80">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-amber-900 font-semibold">
                       <Brain className="w-4 h-4 text-amber-700" />
-                      <span>Inner Self-View (Who You Think You Are)</span>
+                      <span>How you see yourself</span>
                     </div>
                     <span className="text-[11px] font-mono-code px-2 py-0.5 rounded bg-amber-200/70 text-amber-900 font-medium">
-                      Self-Image
+                      Your self-image
                     </span>
                   </div>
                   <p className="text-sm sm:text-base font-serif-luxury text-stone-900 mt-4 leading-relaxed italic">
@@ -400,10 +403,10 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="flex items-center justify-between pb-3 border-b border-stone-800">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-emerald-400 font-semibold">
                       <Eye className="w-4 h-4 text-emerald-400" />
-                      <span>The Outer Mirror (What People Actually Think of You)</span>
+                      <span>What people really think of you</span>
                     </div>
                     <span className="text-[11px] font-mono-code px-2 py-0.5 rounded bg-stone-800 text-stone-300 font-medium">
-                      Market Reality
+                      How others see it
                     </span>
                   </div>
                   <p className="text-sm sm:text-base font-serif-luxury text-stone-100 mt-4 leading-relaxed">
@@ -421,7 +424,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             <div className="mb-8">
               <h3 className="text-base font-serif-luxury font-semibold text-stone-900 mb-1 flex items-center gap-2">
                 <Layers className="w-4 h-4 text-stone-700" />
-                <span>The 4 Pillars: Education, Experience, Awards & Challenges</span>
+                <span>Your story: school, work, awards and challenges</span>
               </h3>
               <p className="text-xs text-stone-500 mb-4">
                 How specific facets of your background translate from your internal perspective into public perception.
@@ -463,7 +466,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="flex items-center justify-between pb-2.5 border-b border-stone-200">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-stone-800 font-semibold">
                       <Briefcase className="w-4 h-4 text-stone-800" />
-                      <span>Work Experience & Career Track</span>
+                      <span>Work experience</span>
                     </div>
                     <span className="text-[11px] font-mono-code px-2 py-0.5 bg-stone-200 text-stone-700 rounded">
                       Milestones
@@ -523,7 +526,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="flex items-center justify-between pb-2.5 border-b border-stone-200">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-stone-800 font-semibold">
                       <Compass className="w-4 h-4 text-stone-800" />
-                      <span>Challenges & Tough Problems Solved</span>
+                      <span>Challenges you overcame</span>
                     </div>
                     <span className="text-[11px] font-mono-code px-2 py-0.5 bg-stone-200 text-stone-700 rounded">
                       Resilience
@@ -556,7 +559,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="flex items-center justify-between">
                   <h3 className="text-base font-serif-luxury font-semibold text-stone-900 flex items-center gap-2">
                     <MessageSquare className="w-4 h-4 text-stone-700" />
-                    <span>Clear Examples & Guidance to Align Your Mirror</span>
+                    <span>Examples and tips to close the gap</span>
                   </h3>
                   <span className="text-xs font-mono-code text-stone-500">Self-Reflection & Guidance</span>
                 </div>
@@ -635,7 +638,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   </div>
                   <div>
                     <span className="text-xs font-mono-code uppercase tracking-wider text-amber-900 font-bold block">
-                      Synthesized Self-Account & Inner North Star
+                      Your story in your own words and what drives you
                     </span>
                     <span className="text-xs text-stone-500 font-sans">
                       Who you believe you are, derived purely from your self-authored statements
@@ -684,11 +687,11 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                     <div className="flex items-center gap-2">
                       <Share2 className="w-4 h-4 text-stone-800" />
                       <h3 className="text-sm sm:text-base font-serif-luxury font-semibold text-stone-950">
-                        Self-Descriptions on Social Media (LinkedIn, Facebook, X)
+                        How you describe yourself on social media
                       </h3>
                     </div>
                     <span className="text-xs font-mono-code text-stone-500">
-                      Profile Bios & Headlines
+                      Your online bios and headlines
                     </span>
                   </div>
 
@@ -736,11 +739,11 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                     <div className="flex items-center gap-2">
                       <Mic className="w-4 h-4 text-stone-800" />
                       <h3 className="text-sm sm:text-base font-serif-luxury font-semibold text-stone-950">
-                        Spoken Philosophy: Quotes from Interviews & Podcasts
+                        What you have said in interviews and podcasts
                       </h3>
                     </div>
                     <span className="text-xs font-mono-code text-stone-500">
-                      Recorded Dialogue & Q&A
+                      Interviews and Q&A
                     </span>
                   </div>
 
@@ -760,7 +763,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                             </span>
                           </div>
                           <span className="text-[11px] font-mono-code px-2 py-0.5 rounded bg-amber-50 text-amber-900 border border-amber-200 self-start sm:self-auto">
-                            Direct Spoken Quote
+                            Something you said
                           </span>
                         </div>
 
@@ -792,7 +795,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                     <div className="flex items-center gap-2">
                       <BookOpen className="w-4 h-4 text-stone-800" />
                       <h3 className="text-sm sm:text-base font-serif-luxury font-semibold text-stone-950">
-                        Authored Articles, Op-Eds & Written Thought Leadership
+                        Articles and opinion pieces you wrote
                       </h3>
                     </div>
                     <span className="text-xs font-mono-code text-stone-500">
@@ -848,7 +851,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 Audience Discourse Audit • Comments Under Posts & Articles
               </div>
               <h2 className="text-2xl font-serif-luxury font-semibold text-stone-900">
-                How People Respond: Evaluated Comments & Feedback
+                How people react: comments and feedback
               </h2>
               <p className="text-xs sm:text-sm text-stone-600 font-sans mt-1 max-w-3xl leading-relaxed">
                 Empirical evaluation of comments and reactions left under your LinkedIn and Facebook posts, YouTube conference videos, and published articles.
@@ -863,7 +866,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                     Audience Comment Sentiment Synthesis
                   </span>
                   <h3 className="text-base sm:text-lg font-serif-luxury font-semibold text-stone-950">
-                    Net Public Sentiment & Commentary Reception
+                    Overall mood of the public
                   </h3>
                 </div>
 
@@ -925,7 +928,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="flex items-center gap-2">
                   <Eye className="w-4 h-4 text-stone-800" />
                   <h3 className="text-base font-serif-luxury font-semibold text-stone-950">
-                    The Reality Contrast: Self-Claims vs. Audience Comments
+                    What you say vs. what people say
                   </h3>
                 </div>
                 <p className="text-xs text-stone-500">
@@ -950,7 +953,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                         <div className="p-4 bg-amber-50/70 rounded-xl border border-amber-200/90 space-y-2">
                           <div className="flex items-center gap-1.5 text-xs font-mono-code uppercase tracking-wider text-amber-900 font-bold">
                             <Quote className="w-3.5 h-3.5 text-amber-700" />
-                            <span>What You Claimed (In Post / Interview):</span>
+                            <span>What you said (in a post or interview):</span>
                           </div>
                           <p className="text-xs sm:text-sm text-stone-900 italic leading-relaxed">
                             &ldquo;{contrast.selfClaim}&rdquo;
@@ -961,7 +964,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                         <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200/90 space-y-2">
                           <div className="flex items-center gap-1.5 text-xs font-mono-code uppercase tracking-wider text-blue-900 font-bold">
                             <MessageCircle className="w-3.5 h-3.5 text-blue-700" />
-                            <span>What Audience Comments Actually Say:</span>
+                            <span>What people's comments say:</span>
                           </div>
                           <p className="text-xs sm:text-sm text-stone-900 leading-relaxed">
                             {contrast.commentersConsensus}
@@ -989,7 +992,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="flex items-center gap-2">
                   <Users className="w-4 h-4 text-stone-800" />
                   <h3 className="text-base font-serif-luxury font-semibold text-stone-950">
-                    Thread-by-Thread Comment Evaluation
+                    Comment-by-comment look
                   </h3>
                 </div>
 
@@ -1121,7 +1124,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   Deep Discovery Synthesis
                 </div>
                 <h2 className="text-2xl font-serif-luxury font-semibold text-stone-900">
-                  Deep Insight Synthesis: What You Learn When You Go Really Deep
+                  The deeper picture
                 </h2>
                 <p className="text-xs text-stone-600 font-sans mt-1">
                   The objective intelligence uncovered when prospective partners, tier-1 clients, executive boards, or journalists explore your full footprint.
@@ -1143,7 +1146,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="bg-stone-800/80 p-4 sm:p-5 rounded-lg border border-stone-700 space-y-2.5">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-emerald-400 font-semibold">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      <span>Verified Core Strengths Uncovered at Depth</span>
+                      <span>Main strengths we found</span>
                     </div>
                     <ul className="space-y-2 text-xs sm:text-sm text-stone-300">
                       {reflection.verifiedCoreStrengths.map((str, idx) => (
@@ -1159,7 +1162,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                   <div className="bg-stone-800/80 p-4 sm:p-5 rounded-lg border border-stone-700 space-y-2.5">
                     <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-amber-400 font-semibold">
                       <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
-                      <span>Discovered Perception Nuances & Blind Spots</span>
+                      <span>Things you may not notice about how you come across</span>
                     </div>
                     <ul className="space-y-2 text-xs sm:text-sm text-stone-300">
                       {reflection.discoveredPerceptionRisks.map((risk, idx) => (
@@ -1176,7 +1179,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="bg-stone-800/90 p-4 sm:p-5 rounded-lg border border-stone-700 space-y-1.5">
                   <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-sky-400 font-semibold">
                     <Lock className="w-4 h-4 text-sky-400 shrink-0" />
-                    <span>The Stealth Unindexed Asset (Hidden Intellectual Property)</span>
+                    <span>A strength that is hard to find online</span>
                   </div>
                   <p className="text-xs sm:text-sm text-stone-200 leading-relaxed">
                     {reflection.theUnindexedAsset}
@@ -1204,7 +1207,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div>
                 <h2 className="text-xl font-serif-luxury font-semibold text-stone-900 flex items-center gap-2">
                   <Layers className="w-5 h-5 text-stone-800" />
-                  <span>The 5-Layer Public Discovery Model</span>
+                  <span>Five layers of what people can find about you</span>
                 </h2>
                 <p className="text-xs text-stone-500 font-sans mt-0.5">
                   Chronological depth modeling: what people discover at each layer of online presence and exploration.
@@ -1297,7 +1300,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 Cross-Channel Evaluation
               </div>
               <h2 className="text-xl font-serif-luxury font-semibold text-stone-900">
-                Contextual Virtual Presence Matrix
+                Where you show up online
               </h2>
               <p className="text-xs text-stone-500 font-sans mt-0.5">
                 Channel-by-channel maturity, coverage scores, and contextual PR diagnosis across major digital touchpoints.
@@ -1333,7 +1336,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                       {/* Coverage Bar */}
                       <div className="space-y-1 mb-3">
                         <div className="flex justify-between text-xs font-mono-code text-stone-500">
-                          <span>Presence Coverage</span>
+                          <span>How well you show up</span>
                           <span className="font-semibold text-stone-800">{item.coverageScore}/100</span>
                         </div>
                         <div className="w-full h-1.5 bg-stone-200 rounded-full overflow-hidden">
@@ -1366,7 +1369,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div>
                 <h2 className="text-xl font-serif-luxury font-semibold text-stone-900 flex items-center gap-2">
                   <FileText className="w-5 h-5 text-stone-800" />
-                  <span>Disclosed Sources Dossier & Evidence Transparency</span>
+                  <span>Sources we used</span>
                 </h2>
                 <p className="text-xs text-stone-500 font-sans mt-0.5">
                   Full disclosure of verified web anchors, publications, archives, and profiles discovered during deep crawling.
@@ -1380,7 +1383,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                     className="px-3.5 py-1.5 bg-stone-900 hover:bg-stone-800 text-stone-50 rounded-lg text-xs font-mono-code transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-2xs"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Include Extra Pages / Preview Sources</span>
+                    <span>Add or check more pages</span>
                   </button>
                 )}
                 <span className="text-xs font-mono-code text-stone-400 hidden sm:inline">Zero Hallucination Grounding</span>
@@ -1488,7 +1491,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div>
                 <h2 className="text-xl font-serif-luxury font-semibold text-stone-900 flex items-center gap-2">
                   <MessageSquare className="w-5 h-5 text-stone-800" />
-                  <span>Public & Social Audience Discourse: How People Respond</span>
+                  <span>What the public and social media say</span>
                 </h2>
                 <p className="text-xs text-stone-500 font-sans mt-0.5">
                   Longitudinal perception analysis across the years and synthesized audience commentary across LinkedIn, Facebook, and professional communities.
@@ -1501,7 +1504,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             <div className="p-6 bg-stone-50 rounded-xl border border-stone-200 mb-8 space-y-4">
               <div className="flex items-center gap-2 text-xs font-mono-code uppercase tracking-wider text-stone-500 font-semibold">
                 <Brain className="w-4 h-4 text-stone-800" />
-                <span>Executive Discourse Summary:</span>
+                <span>Summary of what people say:</span>
               </div>
               <p className="text-sm text-stone-800 leading-relaxed font-sans">
                 {report.audienceResponseAnalysis.overallDiscourseSummary}
@@ -1512,7 +1515,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="bg-white p-4 rounded-lg border border-emerald-200/80 space-y-2">
                   <div className="flex items-center gap-2 text-xs font-mono-code text-emerald-800 font-semibold">
                     <ThumbsUp className="w-3.5 h-3.5" />
-                    <span>What People Praise Most in Comments & Feedback:</span>
+                    <span>What people praise most:</span>
                   </div>
                   <ul className="space-y-1.5 text-xs text-stone-700">
                     {report.audienceResponseAnalysis.sentimentSynthesis.whatPeoplePraiseMost.map((praise, idx) => (
@@ -1527,7 +1530,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div className="bg-white p-4 rounded-lg border border-amber-200/80 space-y-2">
                   <div className="flex items-center gap-2 text-xs font-mono-code text-amber-800 font-semibold">
                     <MessageCircle className="w-3.5 h-3.5" />
-                    <span>What Audiences Question, Debate or Inquire About:</span>
+                    <span>What people question or ask about:</span>
                   </div>
                   <ul className="space-y-1.5 text-xs text-stone-700">
                     {report.audienceResponseAnalysis.sentimentSynthesis.whatAudiencesQuestionOrDebate.map((debt, idx) => (
@@ -1555,7 +1558,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div className="flex items-center gap-2 mb-3">
                 <History className="w-4 h-4 text-stone-700" />
                 <h3 className="text-base font-serif-luxury font-semibold text-stone-950">
-                  Longitudinal Perception: Evolution Throughout the Years
+                  How your image changed over the years
                 </h3>
               </div>
               <p className="text-xs text-stone-500 mb-4">
@@ -1625,7 +1628,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <div className="flex items-center gap-2 mb-3">
                 <MessageCircle className="w-4 h-4 text-stone-700" />
                 <h3 className="text-base font-serif-luxury font-semibold text-stone-950">
-                  Platform-by-Platform Response & Comment Analysis
+                  Reactions on each platform
                 </h3>
               </div>
               <p className="text-xs text-stone-500 mb-4">
@@ -1740,7 +1743,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h2 className="text-xl font-serif-luxury font-semibold text-stone-900">
-                  Behavioral Perception Dimensions & Market Benchmarks
+                  Your scores in key areas
                 </h2>
                 <p className="text-xs text-stone-500 font-sans mt-0.5">
                   Grounded in psychological perception modeling (Fiske Stereotype Content Model: Competence vs. Warmth).
@@ -1755,7 +1758,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-stone-900">
-                      Public Perception Coordinates vs. Industry Benchmark
+                      Your scores compared with others in your field
                     </h3>
                     <span className="text-xs font-mono-code text-stone-500">0–100 Scale</span>
                   </div>
@@ -1786,7 +1789,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <h3 className="text-sm font-semibold text-stone-900">
-                      Public Reception & Unindexed Expertise
+                      How people react, and skills not yet visible online
                     </h3>
                     <span className="text-xs font-mono-code px-2 py-0.5 rounded font-medium bg-stone-200 text-stone-800">
                       Market Distribution
@@ -1873,7 +1876,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
           <section className="mb-12 page-break-inside-avoid">
             <div className="mb-4">
               <h2 className="text-xl font-serif-luxury font-semibold text-stone-900">
-                Visibility & PR Friction Points Holding Back Revenue
+                What holds back your visibility and income
               </h2>
               <p className="text-xs text-stone-500 font-sans mt-0.5">
                 Specific perceptual blind spots that suppress inbound deal flow and prevent commanding top-tier advisory fees.
@@ -1920,7 +1923,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
           <section className="mb-10 page-break-inside-avoid">
             <div className="mb-6">
               <h2 className="text-xl font-serif-luxury font-semibold text-stone-900">
-                Strategic 90-Day Presence & PR Roadmap
+                Your 90-day plan
               </h2>
               <p className="text-xs text-stone-500 font-sans mt-0.5">
                 Structured sequence to elevate public authority, attract tier-1 press/podcasts, and translate visibility into premium advisory revenue.
@@ -1978,7 +1981,7 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
         {report.webSources && report.webSources.length > 0 && (
           <section className="mb-8 pt-4 border-t border-stone-200/80">
             <div className="text-xs font-mono-code text-stone-500 uppercase tracking-wider mb-2">
-              Verified Web Grounding Citations
+              Web pages we used
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
               {report.webSources.map((src, i) => (

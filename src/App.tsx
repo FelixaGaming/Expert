@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ResearchingScreen } from './components/ResearchingScreen';
 import { ReportView } from './components/ReportView';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { Disclaimer } from './components/Disclaimer';
 import { SettingsModal } from './components/SettingsModal';
 import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
@@ -304,7 +305,7 @@ export default function App() {
             {/* Mirror Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-stone-200/90 rounded-full text-xs font-mono-code text-stone-700 uppercase tracking-wider mb-6">
               <Eye className="w-3.5 h-3.5 text-stone-900" />
-              <span>The Public Perception Mirror • Name-Driven Deep Search & Scraper</span>
+              <span>See what the internet says about you</span>
             </div>
 
             {/* Headline */}
@@ -313,7 +314,7 @@ export default function App() {
             </h1>
 
             <p className="text-base sm:text-lg text-stone-600 max-w-2xl mx-auto mb-8 leading-relaxed font-sans">
-              Enter your name alone. ExpertScan performs a deep web search and scrapes verified profiles (LinkedIn, Facebook, personal sites) to hold up an honest mirror: how people see you versus how you present yourself.
+              Type your name. ExpertScan searches the public web, finds pages that may be yours (LinkedIn, Facebook, YouTube, your own website and more), and shows you how others may see you compared with how you see yourself.
             </p>
 
             {/* Deep Search Input Card */}
@@ -326,7 +327,7 @@ export default function App() {
               <form onSubmit={handleSearchSubmit} className="space-y-4">
                 <div>
                   <label htmlFor="input-expert-name" className="block text-xs font-mono-code uppercase tracking-wider text-stone-700 font-semibold mb-2">
-                    Full Legal or Professional Name
+                    Your full name
                   </label>
                   <div className="relative">
                     <input
@@ -467,7 +468,7 @@ export default function App() {
                     className="w-full inline-flex items-center justify-center gap-2 px-4 py-3.5 bg-white border border-stone-300 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed text-stone-800 rounded-xl text-sm font-medium transition-all cursor-pointer shadow-2xs"
                   >
                     <Globe className="w-4 h-4 text-emerald-600" />
-                    <span>Review & Preview Pages</span>
+                    <span>Check pages first</span>
                   </button>
 
                   <button
@@ -477,7 +478,7 @@ export default function App() {
                     className="w-full inline-flex items-center justify-center gap-2 px-5 py-3.5 bg-stone-900 text-stone-50 hover:bg-stone-800 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl text-sm font-medium shadow-md transition-all cursor-pointer"
                   >
                     <Eye className="w-4 h-4 text-emerald-400" />
-                    <span>Look Into The Mirror</span>
+                    <span>Create my report</span>
                     <ArrowRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -485,8 +486,12 @@ export default function App() {
 
               <div className="mt-4 pt-4 border-t border-stone-200/80 flex items-center justify-center gap-2 text-xs font-mono-code text-stone-500 text-center">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>Zero Questionnaires • Live Scraping from LinkedIn & FB • Preview Before Reflecting</span>
+                <span>No questions to answer • You check the pages before we write the report</span>
               </div>
+            </div>
+
+            <div className="max-w-xl mx-auto mb-8 -mt-2 px-2">
+              <Disclaimer variant="short" />
             </div>
 
             {/* 3 Pillars Preview Cards */}
@@ -494,30 +499,30 @@ export default function App() {
               <div className="p-4 bg-white/70 rounded-xl border border-stone-200/80">
                 <div className="flex items-center gap-2 mb-2 text-stone-900 font-medium text-xs font-mono-code uppercase tracking-wide">
                   <Eye className="w-4 h-4 text-emerald-600" />
-                  <span>The Perception Mirror</span>
+                  <span>You vs. the public</span>
                 </div>
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Contrasts your self-presentation against real peer discourse, customer reactions, and external sentiment.
+                  Compares how you describe yourself with what peers, clients and the press say.
                 </p>
               </div>
 
               <div className="p-4 bg-white/70 rounded-xl border border-stone-200/80">
                 <div className="flex items-center gap-2 mb-2 text-stone-900 font-medium text-xs font-mono-code uppercase tracking-wide">
                   <GraduationCap className="w-4 h-4 text-amber-600" />
-                  <span>4 Pillars of Identity</span>
+                  <span>Your story</span>
                 </div>
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Evaluates your alma maters, career track record, notable awards, and tough hurdles overcome.
+                  Looks at your schools, work history, awards and the challenges you overcame.
                 </p>
               </div>
 
               <div className="p-4 bg-white/70 rounded-xl border border-stone-200/80">
                 <div className="flex items-center gap-2 mb-2 text-stone-900 font-medium text-xs font-mono-code uppercase tracking-wide">
                   <Briefcase className="w-4 h-4 text-blue-600" />
-                  <span>Scraped Social Reactions</span>
+                  <span>Public reactions</span>
                 </div>
                 <p className="text-xs text-stone-600 leading-relaxed">
-                  Excavates real comment themes and responses from LinkedIn, Facebook, and industry discussions over time.
+                  Looks for comments and reactions about you that are public. Some sites block us, so this part may be limited.
                 </p>
               </div>
             </div>

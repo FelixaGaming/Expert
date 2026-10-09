@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
+import { jsonrepair } from 'jsonrepair';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
@@ -105,7 +106,12 @@ function extractJson(text: string, open: '{' | '['): any {
   const first = text.indexOf(open);
   const last = text.lastIndexOf(close);
   if (first === -1 || last <= first) throw new Error('Model response contained no JSON');
-  return JSON.parse(text.substring(first, last + 1));
+  return parseLenient(text.substring(first, last + 1));
+}
+
+// Models sometimes slip on one comma or quote in a long answer: repair it instead of discarding everything
+function parseLenient(raw: string): any {
+  try { return JSON.parse(raw); } catch { return JSON.parse(jsonrepair(raw)); }
 }
 
 // Maps AI/provider failures to a JSON response the client can show
@@ -497,6 +503,8 @@ app.post('/api/analyze-presence', async (req, res) => {
   {
     try {
       const prompt = `You are ExpertScan, a public-perception analyst for experts, leaders and professionals.
+WRITING STYLE (very important): write for an ordinary person with no business or psychology background. Use short sentences and everyday words, at a level a 12-year-old can follow. Avoid jargon and buzzwords (no "synthesis", "thought leadership", "positioning", "benchmark", "longitudinal"). If you must use a technical word, explain it in a few words. Be kind and honest. Where the research is thin or you are unsure, say so plainly instead of sounding certain. Never invent facts.
+
 The user wants a friendly, constructive, and accurate mirror that shows:
 "How people see you vs. how you perceive yourself."
 
@@ -1027,8 +1035,9 @@ Respond strictly with a JSON object in this exact schema:
       }
 
       try {
-        const parsed = JSON.parse(cleanedJson);
+        const parsed = parseLenient(cleanedJson);
         parsed.webSources = webSources;
+        parsed.coverage = response.coverage;
 
         // Models sometimes omit sections: make sure the lists and numbers the page reads always exist
         for (const key of ['dimensions', 'deepExcavation', 'disclosedSources', 'virtualPresenceMatrix', 'discoveredFootprint', 'prAndVisibilityGaps', 'timeline']) {

@@ -61,14 +61,14 @@ export const MethodologyModal: React.FC<MethodologyModalProps> = ({ isOpen, onCl
               3. Web Grounding & Digital Authority Signals
             </h3>
             <p>
-              Our automated engine analyzes public web presence via live web search through your chosen AI provider. It measures third-party citations, earned media, podcast appearances, and unified thesis communication.
+              ExpertScan searches the public web, reads the pages it can open, and asks an AI to write the report from what it found. It looks at where you are mentioned, what the press and podcasts say, and how consistent your message is.
             </p>
           </div>
 
           <div className="p-4 bg-stone-50 rounded-xl border border-stone-200 text-xs">
-            <h4 className="font-semibold text-stone-900 mb-1">Build Principle: Absolute Trust</h4>
+            <h4 className="font-semibold text-stone-900 mb-1">Our promise, and its limits</h4>
             <p className="text-stone-600">
-              No invented facts, hallucinated quotes, fake scores, or fabricated methodology. When a detail is unavailable or stealth in the public domain, the system explicitly reports it as unindexed capacity.
+              We tell the AI not to make things up, and to say "not found" when it cannot find something. We cannot promise it never makes a mistake. It only sees public pages, it can miss things, and some sites block us. Please check the sources.
             </p>
           </div>
         </div>
