@@ -150,7 +150,9 @@ Respond STRICTLY with one JSON object and no markdown:
   ]
 }`;
 
-    const response = await runModel(ai, prompt, true, [name, affiliation, domain].filter(Boolean).join(' '), { name, affiliation, domain, depth: 'profiles' });
+    const abort = new AbortController();
+    res.on('close', () => { if (!res.writableEnded) abort.abort(); });
+    const response = await runModel(ai, prompt, true, [name, affiliation, domain].filter(Boolean).join(' '), { name, affiliation, domain, depth: 'profiles' }, abort.signal);
     const parsed = extractJson(response.text, '{');
 
     const websites: DiscoveredWebsite[] = (Array.isArray(parsed.websites) ? parsed.websites : [])
@@ -386,7 +388,8 @@ async function scrapeWebsiteContent(targetUrl: string, subjectName: string = '',
   }
 
   // 2. For social platforms (LinkedIn, Facebook) or sparse content, use AI web search to extract public posts & comments
-  if (ai && (isLinkedIn || isFacebook || bodySnippets.length < 2)) {
+  // The AI fallback is slow and uses the person's Claude plan when running locally, so previews skip it there
+  if (ai && ai.provider !== 'claude-cli' && ai.provider !== 'free' && (isLinkedIn || isFacebook || bodySnippets.length < 2)) {
     try {
       const searchPrompt = `You are a live web research engine for ExpertScan.
 The user wants to scrape live public content, profile bio, headline, and audience reactions/comments from this URL:
@@ -467,6 +470,13 @@ app.post('/api/scrape-url', async (req, res) => {
   let ai: AiConfig;
   try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
 
+  // Only public web pages: private and internal addresses get a clear error instead of an AI-written guess
+  try {
+    await assertPublicUrl(cleanUrl);
+  } catch {
+    return res.status(400).json({ error: 'Only public web pages can be read. Please check the link.' });
+  }
+
   try {
     const scraped = await scrapeWebsiteContent(cleanUrl, (name || '').trim(), ai);
     return res.json({ success: true, data: scraped });
@@ -510,7 +520,8 @@ app.post('/api/analyze-presence', async (req, res) => {
   res.status(200).type('json');
   res.flushHeaders();
   const keepAlive = setInterval(() => res.write(' '), 15_000);
-  res.on('close', () => clearInterval(keepAlive));
+  const abortAnalysis = new AbortController();
+  res.on('close', () => { clearInterval(keepAlive); if (!res.writableEnded) abortAnalysis.abort(); });
   const finish = (body: unknown) => { clearInterval(keepAlive); res.end(JSON.stringify(body)); };
 
   {
@@ -1051,7 +1062,7 @@ Respond strictly with a JSON object in this exact schema:
           };
         }),
         excludeUrls: (Array.isArray(excludedWebsites) ? excludedWebsites : []).filter((w: any) => w && typeof w.url === 'string').map((w: any) => w.url as string),
-      });
+      }, abortAnalysis.signal);
       const responseText = response.text;
       const webSources = response.sources;
 

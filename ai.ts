@@ -231,18 +231,23 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 
 // Runs the local `claude` CLI (your Claude login, no API key) Development only.
 // Claude gets NO tools: the server searches and hands it the results as text.
-async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput): Promise<AiResult> {
-  // Premium mode (CLAUDE_CLI_TOOLS=web): Claude may search and open pages itself, with the best model and high effort
-  const agentic = process.env.CLAUDE_CLI_TOOLS === 'web';
+async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput, signal?: AbortSignal): Promise<AiResult> {
+  // Deep mode (CLAUDE_CLI_TOOLS=web): only the final report may search and open pages itself, with the best model and high effort.
+  // Quick steps, such as listing profiles, use a fast model without tools.
+  const agentic = process.env.CLAUDE_CLI_TOOLS === 'web' && research?.depth === 'deep';
+  const model = agentic ? cfg.model : (process.env.CLAUDE_CLI_FAST_MODEL || 'haiku').trim();
   const { full: prompt, sources, socials, coverage } = await withSearchContext(rawPrompt, search, query, research, 120_000, agentic);
   return new Promise((resolve, reject) => {
     const args = agentic
-      ? ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch', '--effort', 'high', '--no-session-persistence', '--permission-mode', 'dontAsk']
-      : ['-p', '--output-format', 'json', '--model', cfg.model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
+      ? ['-p', '--output-format', 'json', '--model', model, '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch', '--effort', 'high', '--no-session-persistence', '--permission-mode', 'dontAsk']
+      : ['-p', '--output-format', 'json', '--model', model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
     let out = '';
     let err = '';
     const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, (agentic ? 2_400_000 : 900_000));
+    // Stop the Claude process when the page is closed or the connection drops, so it does not keep using the plan
+    const stop = () => { clearTimeout(timer); child.kill(); reject(new AiError('Cancelled.', 499, 'CANCELLED')); };
+    if (signal?.aborted) stop(); else signal?.addEventListener('abort', stop, { once: true });
     child.stdout.on('data', (d) => (out += d));
     child.stderr.on('data', (d) => (err += d));
     child.on('error', () => { clearTimeout(timer); reject(new AiError('The `claude` command was not found on this computer.', 503, 'CLI_MISSING')); });
@@ -315,9 +320,9 @@ async function free(cfg: AiConfig, prompt: string, search: boolean, query?: stri
 }
 
 // Runs one prompt on the visitor's chosen provider, with live web search when `search` is true.
-export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string, research?: ResearchInput): Promise<AiResult> {
+export async function runModel(cfg: AiConfig, prompt: string, search = true, query?: string, research?: ResearchInput, signal?: AbortSignal): Promise<AiResult> {
   const out =
-    cfg.provider === 'claude-cli' ? await claudeCli(cfg, prompt, search, query, research)
+    cfg.provider === 'claude-cli' ? await claudeCli(cfg, prompt, search, query, research, signal)
     : cfg.provider === 'free' ? await free(cfg, prompt, search, query, research)
     : cfg.provider === 'gemini' ? await gemini(cfg, prompt, search)
     : cfg.provider === 'openai' ? await openai(cfg, prompt, search)
