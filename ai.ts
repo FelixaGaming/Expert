@@ -230,6 +230,13 @@ async function duckSearch(query: string): Promise<{ title: string; url: string; 
 }
 
 // Runs the local `claude` CLI (your Claude login, no API key) Development only.
+// Claude processes that are running right now. They are stopped when the server stops, so a restart never leaves
+// one running in the background and using the person's Claude plan.
+const liveChildren = new Set<import('node:child_process').ChildProcess>();
+const stopAllChildren = () => { for (const c of liveChildren) c.kill(); };
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => { stopAllChildren(); process.exit(0); });
+process.on('exit', stopAllChildren);
+
 // Claude gets NO tools: the server searches and hands it the results as text.
 async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, query?: string, research?: ResearchInput, signal?: AbortSignal): Promise<AiResult> {
   // Deep mode (CLAUDE_CLI_TOOLS=web): only the final report may search and open pages itself, with the best model and high effort.
@@ -242,6 +249,8 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
       ? ['-p', '--output-format', 'json', '--model', model, '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch', '--effort', 'high', '--no-session-persistence', '--permission-mode', 'dontAsk']
       : ['-p', '--output-format', 'json', '--model', model, '--tools', '', '--no-session-persistence', '--permission-mode', 'dontAsk'];
     const child = spawn('claude', args, { cwd: os.tmpdir(), stdio: ['pipe', 'pipe', 'pipe'] });
+    liveChildren.add(child);
+    child.on('close', () => liveChildren.delete(child));
     let out = '';
     let err = '';
     const timer = setTimeout(() => { child.kill(); reject(new AiError('Claude took too long. Try again.', 504, 'CLI_TIMEOUT')); }, (agentic ? 2_400_000 : 900_000));

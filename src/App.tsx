@@ -233,7 +233,11 @@ export default function App() {
         body: JSON.stringify(input),
       });
 
-      const result = await response.json().catch(() => ({}));
+      const result = await response.json().catch(() => null);
+      // An empty or cut-off reply means the connection dropped (for example the server restarted) before the report was ready
+      if (result === null) {
+        throw new Error('The connection was interrupted before your report was ready. Nothing was lost on your side. Please press "Create my report" again.');
+      }
       if (!response.ok || result.error) {
         throw new Error(result.error || `Server returned ${response.status}`);
       }
@@ -242,7 +246,7 @@ export default function App() {
         setReportData(result.data);
         setStage('report');
       } else {
-        throw new Error('Invalid report payload received');
+        throw new Error('The report came back incomplete. Please try again.');
       }
     } catch (err: any) {
       console.error('Analysis error:', err);
