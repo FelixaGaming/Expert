@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'path';
 import dotenv from 'dotenv';
 import { jsonrepair } from 'jsonrepair';
+import { verifyOrganizationChecks } from './org-verify';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
@@ -577,6 +578,8 @@ ${
     : ''
 }
 
+ORGANIZATION CHECK (required): the material lists organizations, schools and workplaces connected to the person. For EVERY one of them, and any other you find, add an entry to "organizationChecks": say what the person's role or studies were, whether an independent or official source confirms it ("confirmed", "partly confirmed" or "not confirmed"), and what the organization itself says about the person (staff, team, faculty or alumni pages, news, program pages). If a claim cannot be confirmed, say so plainly and never invent a source. Use only URLs that appear in the material or that you opened.
+
 COMPLETENESS RULES (do not underestimate the person):
 - Material marked "LinkedIn:" or "Facebook:" comes from the person's own data download. It is written by the person (self-reported), except "Recommendations received", which are testimonials written by other people: quote them as such. Include every honor, publication, position, project, post and comment topic you find there.
 - The material contains the FULL text of the pages the user confirmed, and other pages of the same sites. Read all of it before writing.
@@ -609,6 +612,9 @@ RESEARCH & MIRROR SYNTHESIS MANDATE:
 Respond strictly with a JSON object in this exact schema:
 {
   "subjectName": "${name}",
+  "organizationChecks": [
+    { "organization": "Name of a school, employer, university, association, board or other organization connected to the person", "type": "school | employer | association | board | project | other", "relationship": "The person's role and dates, in plain words", "status": "confirmed | partly confirmed | not confirmed", "whatWeFound": "What the organization's own pages or other sources say about the person, or that nothing was found", "sourceUrl": "https://... (a page that was actually found)" }
+  ],
   "primaryArchetype": "e.g. The Rigorous Pioneer / The Stealth Domain Authority / The Architectural Strategist",
   "archetypeTagline": "A concise 1-sentence descriptor of their public perception",
   "outerImpression": "3-4 sentences on how a high-stakes prospective buyer or audience perceives them within 60 seconds of discovering their presence online.",
@@ -1085,6 +1091,14 @@ Respond strictly with a JSON object in this exact schema:
         const parsed = parseLenient(cleanedJson);
         parsed.webSources = webSources;
         parsed.coverage = response.coverage;
+
+        // Every organization the AI says it checked: the cited page must really mention it
+        if (Array.isArray(parsed.organizationChecks)) {
+          parsed.organizationChecks = await verifyOrganizationChecks(
+            parsed.organizationChecks.filter((o: any) => o && typeof o.organization === 'string').slice(0, 25),
+            () => undefined,
+          );
+        }
 
         // Models sometimes omit sections: make sure the lists and numbers the page reads always exist
         for (const key of ['dimensions', 'deepExcavation', 'disclosedSources', 'virtualPresenceMatrix', 'discoveredFootprint', 'prAndVisibilityGaps', 'timeline']) {

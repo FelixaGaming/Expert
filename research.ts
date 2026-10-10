@@ -410,6 +410,86 @@ async function blueskyProfiles(name: string): Promise<SocialLink[]> {
     .map((a: any) => ({ platform: 'Bluesky', url: `https://bsky.app/profile/${a.handle}`, evidence: `Bluesky search: ${a.displayName || a.handle}` }));
 }
 
+// First engine that answers (engines are paced and skip themselves when they are blocking us)
+async function webSearch(query: string): Promise<RawHit[]> {
+  for (const e of ENGINES) {
+    const r = await e.run(query);
+    if (r.length) return r;
+  }
+  return duck(query);
+}
+
+// ---------- Public profile summaries and organizations ----------
+
+// What a logged-out visitor sees on a profile page (title, summary, and the structured data the page publishes for search engines).
+// Only used for profiles the user confirmed or that identify the person; sites that show a login wall return nothing.
+async function publicProfileMeta(url: string): Promise<{ text: string; orgs: string[] } | null> {
+  const page = await safeFetchText(url, { timeoutMs: 9000, maxBytes: 900_000 });
+  if (!page) return null;
+  const $ = cheerio.load(page.text);
+  const meta = (sel: string) => clean($(sel).attr('content') || '');
+  const title = meta('meta[property="og:title"]') || clean($('title').first().text());
+  const desc = meta('meta[property="og:description"]') || meta('meta[name="description"]');
+  if (!desc && /log ?in|sign ?in|authwall|join linkedin/i.test(title)) return null;
+  const orgs: string[] = [];
+  const facts: string[] = [];
+  const real = (v: unknown): v is string => typeof v === 'string' && v.trim().length > 1 && !/\*{3,}/.test(v);
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const d = JSON.parse($(el).contents().text());
+      for (const n of d['@graph'] || [d]) {
+        if (n['@type'] !== 'Person') continue;
+        const jt = Array.isArray(n.jobTitle) ? n.jobTitle.filter(real).join('; ') : n.jobTitle;
+        if (real(jt)) facts.push(`Job title: ${jt}`);
+        for (const key of ['worksFor', 'alumniOf']) {
+          for (const o of [].concat(n[key] || [])) {
+            const nm = typeof o === 'string' ? o : (o as any)?.name;
+            if (real(nm)) { orgs.push(nm.trim()); facts.push(`${key === 'worksFor' ? 'Works for' : 'Studied at'}: ${nm.trim()}`); }
+          }
+        }
+        const loc = n.address?.addressLocality;
+        if (real(loc)) facts.push(`Location: ${loc}`);
+        const aw = [].concat(n.awards || n.award || []).filter(real);
+        if (aw.length) facts.push(`Awards: ${aw.join('; ')}`);
+      }
+    } catch { /* not JSON */ }
+  });
+  const text = [title && `Title: ${title}`, desc && `Summary: ${desc}`, ...facts].filter(Boolean).join('\n');
+  return text.length > 20 ? { text: `Public page summary (what a visitor who is not logged in sees):\n${text}`, orgs } : null;
+}
+
+// Organizations, schools and workplaces named in the person's own material
+function orgsFromText(text: string, personName: string): string[] {
+  const found: string[] = [];
+  const clip = (x: string) => clean(x.replace(/\([^)]*\)/g, '')).replace(/^[-•*\s]+/, '').replace(/[.,;:]+$/, '');
+  for (const m of text.matchAll(/(?:Company Name|School Name|Organization|Employer|Institution|Company)\s*:\s*([^|\n]{2,90})/g)) found.push(clip(m[1]));
+  for (const m of text.matchAll(/^[-•*\s]*([A-Z][^\n–—]{2,80}?)\s+[–—]\s+[^\n]{0,80}?(?:Member|Director|Chair|Advisor|Advisory|Partner|Collaborator|Coordinator|Lead|Fellow|Professor|Lecturer|Consultant|Founder|Volunteer)/gm)) found.push(clip(m[1]));
+  const own = norm2(personName);
+  const seen = new Set<string>();
+  return found.filter((o) => {
+    const k = norm2(o);
+    if (!o || o.length < 3 || o.length > 80 || k === own || seen.has(k) || /^(present|none|n\/a)$/i.test(o)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+const norm2 = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+// Employers, schools and memberships that Wikidata lists for a notable person
+async function wikidataOrgs(name: string): Promise<string[]> {
+  const search = await getJson(`https://www.wikidata.org/w/api.php?action=wbsearchentities&search=${encodeURIComponent(name)}&language=en&limit=5&format=json`);
+  const cand = (search?.search || []).find((e: any) => (e.label || '').toLowerCase() === name.toLowerCase().trim());
+  if (!cand) return [];
+  const ent = await getJson(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${cand.id}&props=claims&format=json`);
+  const claims = ent?.entities?.[cand.id]?.claims || {};
+  if (!(claims.P31 || []).some((c: any) => c.mainsnak?.datavalue?.value?.id === 'Q5')) return [];
+  const ids: string[] = [];
+  for (const prop of ['P69', 'P108', 'P463']) for (const c of (claims[prop] || []).slice(0, 5)) { const id = c.mainsnak?.datavalue?.value?.id; if (id) ids.push(id); }
+  if (!ids.length) return [];
+  const labels = await getJson(`https://www.wikidata.org/w/api.php?action=wbgetentities&ids=${ids.slice(0, 15).join('|')}&props=labels&languages=en&format=json`);
+  return ids.map((id) => labels?.entities?.[id]?.labels?.en?.value as string).filter(Boolean);
+}
+
 // ---------- Name helpers ----------
 
 function nameTokens(name: string): string[] {
@@ -552,6 +632,7 @@ async function peerHits(field: string, ownTopics: string[]): Promise<RawHit[]> {
 
 // ---------- Orchestration ----------
 
+const hostOf0 = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return ''; } };
 const normUrl = (u: string) => u.toLowerCase().replace(/^https?:\/\/(www\.)?/, '').replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/^twitter\.com/, 'x.com');
 
 export async function gatherResearch(input: ResearchInput, maxChars = 70_000): Promise<ResearchPack> {
@@ -740,6 +821,39 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     return true;
   });
 
+  // Public summaries of the profiles that identify the person (confirmed by the user, or found by Wikidata and similar)
+  const metaTargets = [
+    ...seeds.filter((sd) => UNREADABLE.test(hostOf0(sd.url))).map((sd) => sd.url),
+    ...socials.filter((l) => /^Listed on Wikidata|^YouTube channel search|^Bluesky search/.test(l.evidence) || resemblesPerson(l)).map((l) => l.url),
+  ].filter((u, i, a) => a.indexOf(u) === i && !isExcluded(u)).slice(0, 10);
+  const metaByUrl = new Map<string, string>();
+  const metaOrgs: string[] = [];
+  await pool(metaTargets, 3, async (u) => {
+    const m = await publicProfileMeta(u);
+    if (m) { metaByUrl.set(normUrl(u), m.text); metaOrgs.push(...m.orgs); }
+  });
+
+  // Organizations, schools and workplaces connected to the person, then a search for each one
+  const orgNames = [
+    ...(affiliation ? [affiliation] : []),
+    ...metaOrgs,
+    ...orgsFromText(seeds.map((sd) => sd.scraped || '').join('\n') + '\n' + read.texts.join('\n'), name),
+    ...(deep ? await wikidataOrgs(name).catch(() => [] as string[]) : []),
+  ];
+  const orgSeen = new Set<string>();
+  const orgs = orgNames.filter((o) => { const k = norm2(o); if (!k || orgSeen.has(k)) return false; orgSeen.add(k); return true; }).slice(0, deep ? 12 : 0);
+  const orgHits: { org: string; hit: RawHit }[] = [];
+  if (orgs.length) {
+    const lastNm = lastToken;
+    for (const org of orgs) {
+      const found = await webSearch(`"${name}" "${org}"`);
+      for (const h of found.slice(0, 6)) {
+        const hay = `${h.title} ${h.snippet} ${h.url}`.toLowerCase();
+        if (lastNm && hay.includes(lastNm) && !isExcluded(h.url)) orgHits.push({ org, hit: h });
+      }
+    }
+  }
+
   // ---------- Source register: every fact the model may use gets a numbered source ----------
   const register: SourceRecord[] = [];
   const corpus: Record<string, string> = {};
@@ -791,7 +905,10 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     add(kind, u, t.match(/\nTitle: (.*)/)?.[1] || u, t.split('\n').slice(1).join('\n'), kind === 'own site page' ? { selfAuthored: true } : {});
   }
   for (const n of news.lines) { const parts = n.split(' | '); const u = parts[parts.length - 1]; add('news', u, parts[0], `${parts[0]} (${parts[1]}, ${parts[2]})`, { published: parts[2] }); }
-  for (const l of socials) add('social profile', l.url, `${l.platform} profile`, `${l.platform} profile. ${l.evidence}`);
+  for (const l of socials) add('social profile', l.url, `${l.platform} profile`, `${l.platform} profile. ${l.evidence}${metaByUrl.get(normUrl(l.url)) ? `\n${metaByUrl.get(normUrl(l.url))}` : ''}`);
+  // The user's own confirmed social profiles also get their public summary
+  for (const sd of seeds) { const m = metaByUrl.get(normUrl(sd.url)); if (m) add('your confirmed page', sd.url, sd.title || sd.url, m); }
+  for (const { org, hit } of orgHits) add('organization check', hit.url, `${org}: ${hit.title}`, `Organization checked: ${org}. ${hit.title}. ${hit.snippet}`);
   for (const y of yt) { const u = y.match(/https?:\/\/\S+$/)?.[0]; if (u) add('video', u, y.slice(0, 100), y); }
   for (const g of gh) { const u = g.match(/https?:\/\/\S+$/)?.[0]; if (u) add('code profile', u, g.slice(0, 100), g); }
   for (const d of domains.lines) { const u = d.match(/https?:\/\/[^\s|]+/)?.[0]; if (u) add('page', u, d.split('|')[1]?.trim() || u, d); }
@@ -816,6 +933,8 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     group('FULL PAGES READ:', ['page']),
     group('NEWS (Google News headlines):', ['news']),
     group('SOCIAL AND VIDEO PROFILES FOUND (check they are the same person):', ['social profile', 'video', 'code profile']),
+    orgs.length ? `ORGANIZATIONS, SCHOOLS AND WORKPLACES CONNECTED TO THE PERSON (cross-check each one; confirm the role and dates, and note anything an organization says about the person):\n${orgs.map((o) => `- ${o}`).join('\n')}` : '',
+    group('ORGANIZATION CHECKS (search results that mention both the person and the organization):', ['organization check']),
     group('SEARCH RESULTS (snippets only):', ['search result']),
     peerRegister.length ? `POSSIBLE PEERS (other people working in "${field}"; use only to find comparable experts):\n` + peerRegister.map((id) => { const r = register.find((x) => x.id === id)!; return `[${r.id}] ${r.title}\nURL: ${r.url}\n${corpus[r.id]}`; }).join('\n\n') : '',
   ].filter(Boolean);

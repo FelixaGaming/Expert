@@ -1363,6 +1363,40 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
         )}
 
         {/* SECTION D: DISCLOSED SOURCES DOSSIER */}
+        {(activeTab === 'all' || activeTab === 'sources') && Array.isArray(report.organizationChecks) && report.organizationChecks.length > 0 && (
+          <section id="section-organizations" className="mb-12">
+            <div className="border-b border-stone-200 pb-3 mb-5">
+              <h2 className="text-xl font-semibold text-stone-950">Organizations, schools and workplaces we checked</h2>
+              <p className="text-sm text-stone-600 mt-1">For each place connected to this person, we looked for a second source. "Not confirmed" means we could not find one. It does not mean the claim is false.</p>
+            </div>
+            <ul className="space-y-3">
+              {report.organizationChecks.map((o, i) => {
+                const st = (o.status || '').toLowerCase();
+                const cls = st.startsWith('confirmed') ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : st.startsWith('partly') ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-stone-100 text-stone-700 border-stone-300';
+                return (
+                  <li key={`${o.organization}-${i}`} className="rounded-xl border border-stone-200 bg-white p-4 text-sm">
+                    <div className="flex flex-wrap items-center gap-2 mb-1">
+                      <strong className="text-stone-900">{o.organization}</strong>
+                      {o.type && <span className="text-[11px] px-2 py-0.5 rounded bg-stone-100 border border-stone-300">{o.type}</span>}
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded border ${cls}`}>{o.status || 'not confirmed'}</span>
+                    </div>
+                    {o.relationship && <p className="text-stone-700">{o.relationship}</p>}
+                    {o.whatWeFound && <p className="text-stone-600 mt-1">{o.whatWeFound}</p>}
+                    {o.sourceUrl && /^https?:\/\//.test(o.sourceUrl) && (
+                      <a href={o.sourceUrl} target="_blank" rel="noreferrer" className="text-xs text-stone-500 underline break-all">{o.sourceUrl}</a>
+                    )}
+                    {o.linkChecked && (
+                      <p className={`text-[11px] mt-1 ${o.linkChecked === 'mentions' ? 'text-emerald-700' : 'text-amber-800'}`}>
+                        {o.linkChecked === 'mentions' ? 'Link checked: the page mentions this organization.' : o.linkChecked === 'does-not-mention' ? 'Link checked: the page does not mention this organization, so please verify it yourself.' : 'We could not open this page to check it.'}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
         {(activeTab === 'all' || activeTab === 'sources') && disclosedSources.length > 0 && (
           <section className="mb-12 page-break-inside-avoid">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">

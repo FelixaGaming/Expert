@@ -242,7 +242,18 @@ export interface ReportCoverage {
   searchLimited: boolean;
 }
 
+export interface OrganizationCheck {
+  organization: string;
+  type?: string;
+  relationship?: string;
+  status?: string; // confirmed | partly confirmed | not confirmed
+  whatWeFound?: string;
+  sourceUrl?: string;
+  linkChecked?: 'mentions' | 'does-not-mention' | 'could-not-open';
+}
+
 export interface BehavioralReportData {
+  organizationChecks?: OrganizationCheck[];
   coverage?: ReportCoverage;
   subjectName: string;
   primaryArchetype: string;
