@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ExternalLink, UserCheck, AlertTriangle } from 'lucide-react';
 import { DiscoveredWebsite } from '../types';
+import { importProfileFiles } from '../profile-import';
 
 export const IDENTITY_PLATFORMS = ['LinkedIn', 'Facebook'] as const;
 export type IdentityPlatform = (typeof IDENTITY_PLATFORMS)[number];
@@ -27,6 +28,26 @@ const searchUrl = (p: IdentityPlatform, name: string) =>
 // For LinkedIn and Facebook the user always chooses which profile is theirs, or adds their own link or text
 export const SocialIdentityPicker: React.FC<Props> = ({ expertName, websites, selectedMap, setSelectedMap, onAddLink, pasted, setPasted }) => {
   const [links, setLinks] = useState<Record<string, string>>({});
+  const [importNote, setImportNote] = useState<Record<string, string>>({});
+  const [importing, setImporting] = useState<string | null>(null);
+
+  const handleFiles = async (platform: IdentityPlatform, fileList: FileList | null) => {
+    if (!fileList || !fileList.length) return;
+    setImporting(platform);
+    try {
+      const result = await importProfileFiles(platform, Array.from(fileList));
+      if (!result.text) {
+        setImportNote((p) => ({ ...p, [platform]: `Nothing readable was found in that file. Make sure it is your ${platform} data download (.zip).` }));
+      } else {
+        setPasted((p) => ({ ...p, [platform]: result.text }));
+        setImportNote((p) => ({ ...p, [platform]: `Read ${result.filesRead.length} file${result.filesRead.length === 1 ? '' : 's'} (${result.text.length.toLocaleString()} characters). ${result.filesSkipped} other file${result.filesSkipped === 1 ? ' was' : 's were'} ignored, including anything private such as messages and contacts.${result.truncated ? ' The text was shortened to fit.' : ''} You can edit it below.` }));
+      }
+    } catch {
+      setImportNote((p) => ({ ...p, [platform]: 'That file could not be read. Please upload the .zip you downloaded, or paste text instead.' }));
+    } finally {
+      setImporting(null);
+    }
+  };
 
   return (
     <div className="grid md:grid-cols-2 gap-4 mb-1">
@@ -94,20 +115,41 @@ export const SocialIdentityPicker: React.FC<Props> = ({ expertName, websites, se
               Search {platform} for this name <ExternalLink className="w-3 h-3" />
             </a>
 
+            <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 p-3">
+              <p className="text-[11px] font-semibold text-stone-800 mb-1">Best way: upload your own {platform} data download</p>
+              <p className="text-[11px] text-stone-600 mb-2">
+                {platform === 'LinkedIn'
+                  ? 'LinkedIn: Settings and Privacy, Data privacy, "Get a copy of your data". Choose your profile data, posts, comments and recommendations, or the full archive. LinkedIn emails you a .zip, from a few minutes to a day later.'
+                  : 'Facebook: Settings, Accounts Center, Your information and permissions, "Download your information". Choose your profile, posts, comments and pages, format JSON, all time. Facebook prepares a .zip for you.'}
+              </p>
+              <input
+                type="file"
+                accept=".zip,.csv,.json,.html,.htm"
+                multiple
+                disabled={importing === platform}
+                onChange={(e) => { handleFiles(platform, e.target.files); e.target.value = ''; }}
+                className="block w-full text-[11px] text-stone-700 file:mr-2 file:px-2.5 file:py-1 file:text-[11px] file:rounded-md file:border-0 file:bg-stone-900 file:text-white file:cursor-pointer"
+                aria-label={`Upload your ${platform} data download`}
+              />
+              {importing === platform && <p className="text-[11px] text-stone-600 mt-1">Reading your file...</p>}
+              {importNote[platform] && <p className="text-[11px] text-emerald-800 mt-1">{importNote[platform]}</p>}
+              <p className="text-[11px] text-stone-500 mt-1">The file is read in your browser and is not uploaded. Only the text shown below is sent, and only if you create the report.</p>
+            </div>
+
             <div className="mt-3">
               <label htmlFor={`paste-${platform}`} className="block text-[11px] font-semibold text-stone-700 mb-1">
-                Optional, recommended: paste text from your {platform} profile
+                Or paste text from your {platform} profile
               </label>
               <textarea
                 id={`paste-${platform}`}
-                rows={4}
-                maxLength={20000}
+                rows={5}
+                maxLength={60000}
                 value={pasted[platform] || ''}
                 onChange={(e) => setPasted((p) => ({ ...p, [platform]: e.target.value }))}
                 placeholder={platform === 'LinkedIn' ? 'About, Experience, Honors & awards, Publications, Featured, recent posts...' : 'About, Work and education, Awards, Posts and comments...'}
-                className="w-full px-2.5 py-1.5 text-xs bg-stone-50 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900 focus:bg-white"
+                className="w-full px-2.5 py-1.5 text-xs bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-stone-900"
               />
-              <p className="text-[11px] text-stone-500 mt-1">{platform} does not let us read it, so your pasted text is the only way the report can use what is there. It is treated as written by you.</p>
+              <p className="text-[11px] text-stone-500 mt-1">{platform} does not let us read it, so this text is the only way the report can use what is there. It is treated as written by you.</p>
             </div>
           </div>
         );

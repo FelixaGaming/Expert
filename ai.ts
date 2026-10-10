@@ -236,7 +236,7 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
   // Quick steps, such as listing profiles, use a fast model without tools.
   const agentic = process.env.CLAUDE_CLI_TOOLS === 'web' && research?.depth === 'deep';
   const model = agentic ? cfg.model : (process.env.CLAUDE_CLI_FAST_MODEL || 'haiku').trim();
-  const { full: prompt, sources, socials, coverage } = await withSearchContext(rawPrompt, search, query, research, 120_000, agentic);
+  const { full: prompt, sources, socials, coverage } = await withSearchContext(rawPrompt, search, query, research, 200_000, agentic);
   return new Promise((resolve, reject) => {
     const args = agentic
       ? ['-p', '--output-format', 'json', '--model', model, '--tools', 'WebSearch,WebFetch', '--allowedTools', 'WebSearch', 'WebFetch', '--effort', 'high', '--no-session-persistence', '--permission-mode', 'dontAsk']
@@ -270,7 +270,7 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
 // Runs DuckDuckGo searches on the server and prepends the results, so a model with no web tools can still use live data.
 const AGENTIC_INTRO = 'You can use the tools WebSearch and WebFetch. The research material below was gathered first: treat it as a starting point and go much deeper with your tools. Search for and open pages about: awards and recognitions, talks, presentations, keynotes, conferences, publications, books, interviews, podcasts, videos, news, advisory and board roles, committees, projects, testimonials, and social profiles. Open the person\'s own sites and their other pages. Check for other people with the same name and keep them apart. WebFetch cannot read LinkedIn or Facebook, so never claim to have read them. Cite only URLs that appear in the material or that you actually opened. Keep going until each area is covered. When you are done, answer in the exact output format the task requires, with nothing before or after it, and never ask questions.';
 
-async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 120_000, agentic = false) {
+async function withSearchContext(prompt: string, search: boolean, query?: string, research?: ResearchInput, maxChars = 200_000, agentic = false) {
   const intro = agentic ? AGENTIC_INTRO : 'You have no browsing tools. The web research has already been done for you: the material below was gathered live and is your only source of facts. Where the task says to search the web, use this material instead. Cite only URLs that appear in it. If the material does not support a claim, say it is not found rather than inventing it. The material may include namesakes (other people with the same name): use affiliation, field and location to separate them, and flag doubtful matches. Do not refuse or ask questions: always answer in the exact output format the task requires, with nothing before or after it.';
   if (search && research) {
     const pack = await gatherResearch(research, maxChars);

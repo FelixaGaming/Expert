@@ -757,11 +757,11 @@ export async function gatherResearch(input: ResearchInput, maxChars = 70_000): P
     if (!url || isExcluded(url)) return;
     const key = normUrl(url);
     const big = kind === 'your confirmed page' || kind === 'own site page';
-    const clipped = text.slice(0, big ? 40_000 : kind === 'page' ? 4000 : 600);
+    const clipped = text.slice(0, big ? 60_000 : kind === 'page' ? 4000 : 600);
     const existing = idByUrl.get(key);
     if (existing) {
       // The full page text goes first, ahead of any short summary that was already stored
-      if (!corpus[existing].includes(clipped.slice(0, 80))) corpus[existing] = (big ? `${clipped}\n${corpus[existing]}` : `${corpus[existing]}\n${clipped}`).slice(0, big ? 40_000 : 4000);
+      if (!corpus[existing].includes(clipped.slice(0, 80))) corpus[existing] = (big ? `${clipped}\n${corpus[existing]}` : `${corpus[existing]}\n${clipped}`).slice(0, big ? 60_000 : 4000);
       const rec = register.find((r) => r.id === existing)!;
       if ((kind === 'page' || big) && rec.kind === 'search result') {
         rec.kind = kind;

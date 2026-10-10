@@ -578,6 +578,7 @@ ${
 }
 
 COMPLETENESS RULES (do not underestimate the person):
+- Material marked "LinkedIn:" or "Facebook:" comes from the person's own data download. It is written by the person (self-reported), except "Recommendations received", which are testimonials written by other people: quote them as such. Include every honor, publication, position, project, post and comment topic you find there.
 - The material contains the FULL text of the pages the user confirmed, and other pages of the same sites. Read all of it before writing.
 - List EVERY award, recognition, talk, presentation, keynote, conference, publication, advisory or board role, committee, media appearance and project you find there, each with its year and organization. Do not summarize several items into one, and do not leave any out.
 - Never say something was "not found" if it appears anywhere in the material. Check the confirmed pages first.
@@ -1058,7 +1059,7 @@ Respond strictly with a JSON object in this exact schema:
             url: w.url as string,
             title: typeof w.title === 'string' ? w.title : undefined,
             platform: typeof w.platform === 'string' ? w.platform : undefined,
-            scraped: [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || [])].filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 20_000),
+            scraped: [d.snippet, ...(d.headings || []), ...(d.bodySnippets || []), ...(d.extractedQuotes || [])].filter((x: unknown) => typeof x === 'string' && x).join('\n').slice(0, 60_000),
           };
         }),
         excludeUrls: (Array.isArray(excludedWebsites) ? excludedWebsites : []).filter((w: any) => w && typeof w.url === 'string').map((w: any) => w.url as string),
