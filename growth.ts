@@ -104,7 +104,7 @@ export interface GrowthPlan {
   gaps: { area: string; now: string; topLevel: string; gapSize: string }[];
   opportunities: Opportunity[];
   pathway: Phase[];
-  budget: { lineItems: { item: string; category: string; low: number; high: number; when: string; assumption: string }[]; total: Money; byCategory: Record<string, Money>; withinCap: boolean | null; notes: string[] };
+  budget: { lineItems: { item: string; category: string; low: number; high: number; when: string; assumption: string }[]; total: Money; pathwayTotal: Money; byCategory: Record<string, Money>; withinCap: boolean | null; notes: string[] };
   resourcesNeeded: { hoursPerWeek: string; skills: string[]; tools: string[]; people: string[] };
   successMarkers: { milestone: string; by: string; howToMeasure: string }[];
   assumptions: string[];
@@ -197,8 +197,15 @@ export async function buildGrowthPlan(raw: any, subject: string, answers: PlanAn
     c.low += l.low; c.high += l.high;
   }
   const total = sum(lineItems);
+  const pathwayTotal = sum(pathway.map((p) => p.totalCost));
   const cap = num(answers.budgetCap);
-  const withinCap = cap > 0 ? total.high <= cap : null;
+  // The cautious figure is the larger of the two estimates, so a budget limit is never judged against the smaller one
+  const cautiousHigh = Math.max(total.high, pathwayTotal.high);
+  const withinCap = cap > 0 ? cautiousHigh <= cap : null;
+  const budgetNotes = strings(raw?.budget?.notes, 6);
+  if (pathwayTotal.high > total.high * 1.1) {
+    budgetNotes.unshift(`The steps in the pathway add up to ${pathwayTotal.low} to ${pathwayTotal.high} ${answers.currency}, which is more than the budget table (${total.low} to ${total.high}). The two were estimated separately, so use the higher figure to stay safe, or choose fewer steps.`);
+  }
 
   const checks = {
     opportunities: opportunities.length,
@@ -221,7 +228,7 @@ export async function buildGrowthPlan(raw: any, subject: string, answers: PlanAn
     gaps: arr(raw?.gaps).slice(0, 8).map((g) => ({ area: str(g?.area, 40), now: str(g?.now, 300), topLevel: str(g?.topLevel, 300), gapSize: ['small', 'medium', 'large'].includes(g?.gapSize) ? g.gapSize : 'medium' })).filter((g) => g.area),
     opportunities,
     pathway,
-    budget: { lineItems, total, byCategory, withinCap, notes: strings(raw?.budget?.notes, 6) },
+    budget: { lineItems, total, pathwayTotal, byCategory, withinCap, notes: budgetNotes },
     resourcesNeeded: { hoursPerWeek: str(raw?.resourcesNeeded?.hoursPerWeek, 100), skills: strings(raw?.resourcesNeeded?.skills), tools: strings(raw?.resourcesNeeded?.tools), people: strings(raw?.resourcesNeeded?.people) },
     successMarkers: arr(raw?.successMarkers).slice(0, 10).map((m) => ({ milestone: str(m?.milestone, 200), by: str(m?.by, 60), howToMeasure: str(m?.howToMeasure, 200) })).filter((m) => m.milestone),
     assumptions: strings(raw?.assumptions, 10),

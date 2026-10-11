@@ -173,6 +173,7 @@ export const GrowthPlanView: React.FC<Props> = ({ plan, onBack }) => {
                 </tr>
               ))}
               <tr className="border-t-2 border-stone-900 font-semibold"><td className="py-2" colSpan={3}>Total</td><td className="text-right whitespace-nowrap pr-3">{range(plan.budget.total)}</td><td /></tr>
+              <tr className="text-stone-600"><td className="py-1" colSpan={3}>Cost of all pathway steps added together (a second estimate)</td><td className="text-right whitespace-nowrap pr-3">{range(plan.budget.pathwayTotal)}</td><td /></tr>
             </tbody>
           </table>
         </div>
@@ -183,7 +184,7 @@ export const GrowthPlanView: React.FC<Props> = ({ plan, onBack }) => {
         )}
         {plan.budget.withinCap !== null && (
           <p className={`text-sm font-medium ${plan.budget.withinCap ? 'text-emerald-800' : 'text-amber-900'}`}>
-            {plan.budget.withinCap ? `The highest estimate fits inside your limit of ${fmt(parseFloat(plan.answers.budgetCap))}.` : `The highest estimate is above your limit of ${fmt(parseFloat(plan.answers.budgetCap))}. Start with the free and low-cost steps, or spread the plan over a longer time.`}
+            {plan.budget.withinCap ? `Both estimates fit inside your limit of ${fmt(parseFloat(plan.answers.budgetCap))}.` : `The higher estimate is above your limit of ${fmt(parseFloat(plan.answers.budgetCap))}. Start with the free and low-cost steps, or spread the plan over a longer time.`}
           </p>
         )}
         {plan.budget.notes.length > 0 && <ul className="list-disc pl-5 text-sm text-stone-700 space-y-1">{plan.budget.notes.map((n) => <li key={n}>{n}</li>)}</ul>}
