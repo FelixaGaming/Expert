@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { jsonrepair } from 'jsonrepair';
 import { verifyOrganizationChecks } from './org-verify';
 import { buildGrowthPlan, buildGrowthPrompt, type PlanAnswers } from './growth';
+import { DailyQuota, JobStore, type JobKind } from './jobs';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
@@ -22,6 +23,8 @@ app.use(express.json({ limit: '1mb' }));
 const RATE_LIMIT = Number(process.env.RATE_LIMIT_PER_MIN) || 60;
 const hits = new Map<string, { count: number; reset: number }>();
 app.use('/api', (req, res, next) => {
+  // Checking on a job is cheap and happens every few seconds, so it is not counted against the main limit
+  if (req.method === 'GET' && req.path.startsWith('/jobs/')) return next();
   const now = Date.now();
   const key = req.ip || 'unknown';
   const entry = hits.get(key);
@@ -44,7 +47,7 @@ app.get('/api/config', (_req, res) => res.json({ providers: serverProviders() })
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'ExpertScan', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', service: 'ExpertScan', timestamp: new Date().toISOString(), jobs: jobs.stats() });
 });
 
 export interface ScrapedWebsiteData {
@@ -489,7 +492,7 @@ app.post('/api/scrape-url', async (req, res) => {
 
 
 // Behavioral Intelligence Analysis Endpoint
-app.post('/api/analyze-presence', async (req, res) => {
+const analyzeHandler = async (req: any, res: any) => {
   const {
     name,
     selfPerception,
@@ -1054,7 +1057,8 @@ Respond strictly with a JSON object in this exact schema:
   }
 }`;
 
-      const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), {
+      res.progress?.('Searching the web, reading pages and writing your report. This is the longest step.');
+    const response = await runModel(ai, prompt, true, [cleanName, affiliation?.trim()].filter(Boolean).join(' '), {
         name: cleanName,
         affiliation: affiliation?.trim(),
         domain: domain?.trim(),
@@ -1154,11 +1158,11 @@ Respond strictly with a JSON object in this exact schema:
   }
 
   return finish({ error: 'The model\'s report could not be read. Please try again.' });
-});
+};
 
 
 // "Path to the top": a growth plan with real, link-checked opportunities, an ordered pathway and a budget
-app.post('/api/growth-plan', async (req, res) => {
+const growthHandler = async (req: any, res: any) => {
   const { subject, report, answers } = req.body || {};
   if (!subject || typeof subject !== 'string' || !report || typeof report !== 'object') {
     return res.status(400).json({ error: 'A report is needed to build a plan.' });
@@ -1194,7 +1198,9 @@ app.post('/api/growth-plan', async (req, res) => {
     const reportText = JSON.stringify(trimmed).slice(0, 50_000);
     const prompt = buildGrowthPrompt(subjectName, reportText, plan);
     // search=false: the report already holds the research. The deep-mode flag lets Claude use its own web tools to find real opportunities.
+    res.progress?.('Searching for real awards, speaking slots, media and grants.');
     const response = await runModel(ai, prompt, false, undefined, { name: subjectName, depth: 'deep' }, abort.signal);
+    res.progress?.('Opening every link to check it.');
 
     let raw: any;
     try {
@@ -1211,6 +1217,95 @@ app.post('/api/growth-plan', async (req, res) => {
     console.error('Growth plan failed:', err instanceof Error ? err.message : err);
     return finish({ error: 'The plan could not be created. Please try again.' });
   }
+};
+
+// ---------- Jobs: reports and plans run as saved jobs ----------
+
+class JobError extends Error {
+  constructor(message: string, public code?: string) { super(message); }
+}
+
+// Runs one of the handlers above without a real web response and returns what it would have sent
+function runHandler(handler: (req: any, res: any) => Promise<unknown>, body: unknown, headers: Record<string, unknown>, ctx: { signal: AbortSignal; progress: (s: string) => void }): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    let status = 200;
+    let ended = false;
+    const closers: (() => void)[] = [];
+    const res: any = {
+      writableEnded: false,
+      status(c: number) { status = c; return res; },
+      type() { return res; },
+      flushHeaders() {},
+      write() { return true; },
+      on(ev: string, fn: () => void) { if (ev === 'close') closers.push(fn); return res; },
+      json(obj: unknown) { return res.end(JSON.stringify(obj)); },
+      progress: ctx.progress,
+      end(data: string) {
+        if (ended) return;
+        ended = true;
+        res.writableEnded = true;
+        let out: any = {};
+        try { out = JSON.parse(String(data || '{}').trim() || '{}'); } catch { return reject(new JobError('The result could not be read. Please try again.')); }
+        if (status >= 400 || out.error) return reject(new JobError(out.error || 'Something went wrong. Please try again.', out.code));
+        resolve(out.data ?? out);
+      },
+    };
+    const onAbort = () => {
+      if (ended) return;
+      closers.forEach((f) => f());
+      reject(new JobError('Cancelled.', 'CANCELLED'));
+    };
+    if (ctx.signal.aborted) return onAbort();
+    ctx.signal.addEventListener('abort', onAbort, { once: true });
+    handler({ body, headers, query: {}, ip: 'job' }, res).catch((e: unknown) => reject(e));
+  });
+}
+
+// One failed job or request must never take the whole server down: log it and keep serving everyone else
+process.on('unhandledRejection', (reason) => { console.error('Unhandled rejection:', reason instanceof Error ? reason.stack || reason.message : reason); });
+process.on('uncaughtException', (err) => { console.error('Uncaught exception:', err.stack || err.message); });
+
+const DATA_DIR = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const jobs = new JobStore({
+  dir: path.join(DATA_DIR, 'jobs'),
+  // The local Claude login can only do one deep run at a time; hosted AI keys can do more
+  maxConcurrent: Number(process.env.MAX_CONCURRENT_JOBS) || (process.env.AI_PROVIDER === 'claude-cli' ? 1 : 3),
+  ttlMs: (Number(process.env.JOB_TTL_HOURS) || 24) * 3_600_000,
+});
+const quota = new DailyQuota(Number(process.env.JOBS_PER_IP_PER_DAY ?? 10), Number(process.env.DAILY_JOB_LIMIT ?? 300));
+for (const sig of ['SIGINT', 'SIGTERM'] as const) process.on(sig, () => { jobs.shutdown(); });
+
+app.post('/api/jobs', (req, res) => {
+  const kind = req.body?.kind as JobKind;
+  const payload = req.body?.payload;
+  if ((kind !== 'report' && kind !== 'plan') || !payload || typeof payload !== 'object') {
+    return res.status(400).json({ error: 'That request was not understood.' });
+  }
+  if (kind === 'report' && !(typeof payload.name === 'string' && payload.name.trim())) return res.status(400).json({ error: 'A name is required.' });
+  if (kind === 'plan' && !(typeof payload.subject === 'string' && payload.report && typeof payload.report === 'object')) return res.status(400).json({ error: 'A report is needed to build a plan.' });
+
+  // The AI key (server or the visitor's own) is checked now, so a missing key fails at once instead of after waiting in the queue
+  try { readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
+
+  const limited = quota.take(req.ip || 'unknown');
+  if (limited) return res.status(429).json({ error: limited });
+
+  const headers = { ...req.headers };
+  const handler = kind === 'report' ? analyzeHandler : growthHandler;
+  const subject = String(kind === 'report' ? payload.name : payload.subject).slice(0, 120);
+  const job = jobs.create(kind, (ctx) => runHandler(handler, payload, headers, ctx), subject);
+  return res.status(202).json({ id: job.id, ...jobs.get(job.id) });
+});
+
+app.get('/api/jobs/:id', (req, res) => {
+  const view = jobs.get(req.params.id);
+  if (!view) return res.status(404).json({ error: 'This job was not found. It may have finished long ago and been deleted.' });
+  res.set('Cache-Control', 'no-store');
+  return res.json(view);
+});
+
+app.delete('/api/jobs/:id', (req, res) => {
+  return res.json({ cancelled: jobs.cancel(req.params.id) });
 });
 
 // Vite middleware in dev or static files in production

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ResearchingScreen } from './components/ResearchingScreen';
 import { ReportView } from './components/ReportView';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -8,6 +8,7 @@ import { GrowthPlanView } from './components/GrowthPlanView';
 import type { GrowthPlan, PlanAnswers } from '../growth';
 import { SettingsModal } from './components/SettingsModal';
 import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
+import { cancelJob, loadActiveJob, saveActiveJob, startJob, watchJob, type JobView } from './jobs-client';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
 import { ExpertProfileInput, BehavioralReportData, DiscoveredWebsite } from './types';
 import {
@@ -39,6 +40,8 @@ export default function App() {
   const [planData, setPlanData] = useState<GrowthPlan | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [jobInfo, setJobInfo] = useState<JobView | null>(null);
+  const watchAbort = useRef<AbortController | null>(null);
   const [stage, setStage] = useState<'search' | 'researching' | 'report' | 'planning' | 'plan'>('search');
   const [nameInput, setNameInput] = useState('');
   const [affiliationInput, setAffiliationInput] = useState('');
@@ -209,6 +212,9 @@ export default function App() {
 
   // Wipes everything about the previous person so nothing carries over into the next search
   const handleResetToSearch = () => {
+    watchAbort.current?.abort();
+    saveActiveJob(null);
+    setJobInfo(null);
     setStage('search');
     setErrorMsg(null);
     setReportData(null);
@@ -235,58 +241,94 @@ export default function App() {
     if (!reportData) return;
     setIsPlanModalOpen(false);
     setPlanError(null);
+    setJobInfo(null);
     setStage('planning');
     try {
-      const response = await fetch('/api/growth-plan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
-        body: JSON.stringify({ subject: reportData.subjectName, report: reportData, answers }),
-      });
-      const result = await response.json().catch(() => null);
-      if (result === null) throw new Error('The connection was interrupted before your plan was ready. Your report is safe. Please press "Path to the top" again.');
-      if (!response.ok || result.error) throw new Error(result.error || `Server returned ${response.status}`);
-      if (!result.success || !result.data) throw new Error('The plan came back incomplete. Please try again.');
-      setPlanData(result.data);
-      setStage('plan');
+      const started = await startJob('plan', { subject: reportData.subjectName, report: reportData, answers });
+      saveActiveJob({ id: started.id, kind: 'plan' });
+      setJobInfo(started);
+      await followJob(started.id, 'plan');
     } catch (err: any) {
-      setPlanError(err?.message || 'The plan could not be created. Please try again.');
+      saveActiveJob(null);
+      if (err?.message !== 'Cancelled.') setPlanError(err?.message || 'The plan could not be created. Please try again.');
       setStage('report');
     }
+  };
+
+  // Starts a saved job on the server and follows it. The job keeps running if the page is refreshed or closed.
+  const followJob = async (id: string, kind: 'report' | 'plan') => {
+    watchAbort.current?.abort();
+    const abort = new AbortController();
+    watchAbort.current = abort;
+    const done = await watchJob(id, setJobInfo, abort.signal);
+    if (abort.signal.aborted) return;
+    saveActiveJob(null);
+    if (done.status === 'cancelled') throw new Error('Cancelled.');
+    if (done.status !== 'done' || !done.result) throw new Error(done.error?.message || 'It could not be finished. Please try again.');
+    if (kind === 'report') { setReportData(done.result); setStage('report'); }
+    else { setPlanData(done.result); setStage('plan'); }
   };
 
   const runAnalysis = async (input: ExpertProfileInput) => {
     setCurrentAnalyzingName(input.name);
     setStage('researching');
     setErrorMsg(null);
+    setJobInfo(null);
 
     try {
-      const response = await fetch('/api/analyze-presence', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
-        body: JSON.stringify(input),
-      });
-
-      const result = await response.json().catch(() => null);
-      // An empty or cut-off reply means the connection dropped (for example the server restarted) before the report was ready
-      if (result === null) {
-        throw new Error('The connection was interrupted before your report was ready. Nothing was lost on your side. Please press "Create my report" again.');
-      }
-      if (!response.ok || result.error) {
-        throw new Error(result.error || `Server returned ${response.status}`);
-      }
-
-      if (result.success && result.data) {
-        setReportData(result.data);
-        setStage('report');
-      } else {
-        throw new Error('The report came back incomplete. Please try again.');
-      }
+      const started = await startJob('report', input);
+      saveActiveJob({ id: started.id, kind: 'report' });
+      setJobInfo(started);
+      await followJob(started.id, 'report');
     } catch (err: any) {
       console.error('Analysis error:', err);
-      setErrorMsg(err?.message || 'Analysis failed. Please try again.');
+      saveActiveJob(null);
+      if (err?.message !== 'Cancelled.') setErrorMsg(err?.message || 'Analysis failed. Please try again.');
       setStage('search');
     }
   };
+
+  // Leaves the waiting screen and stops the job so it does not keep using the AI
+  const handleCancelJob = async () => {
+    const active = loadActiveJob();
+    watchAbort.current?.abort();
+    saveActiveJob(null);
+    if (active) await cancelJob(active.id);
+    setJobInfo(null);
+    setStage(reportData ? 'report' : 'search');
+  };
+
+  // Coming back to the page: pick up a job that was running or finished while the page was closed
+  useEffect(() => {
+    const active = loadActiveJob();
+    if (!active) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/jobs/${active.id}`, { cache: 'no-store' });
+        if (!res.ok) { saveActiveJob(null); return; }
+        const view = (await res.json()) as JobView;
+        if (cancelled) return;
+        setCurrentAnalyzingName(view.subject || '');
+        if (view.status === 'done' && view.result) {
+          saveActiveJob(null);
+          if (active.kind === 'report') { setReportData(view.result); setStage('report'); }
+          else { setPlanData(view.result); setStage('plan'); }
+        } else if (view.status === 'queued' || view.status === 'running') {
+          setJobInfo(view);
+          setStage(active.kind === 'report' ? 'researching' : 'planning');
+          await followJob(active.id, active.kind);
+        } else {
+          saveActiveJob(null);
+          if (view.status === 'error') setErrorMsg(view.error?.message || 'Your earlier job stopped. Please start it again.');
+        }
+      } catch (err: any) {
+        saveActiveJob(null);
+        if (!cancelled && err?.message !== 'Cancelled.') { setErrorMsg(err?.message || 'Your earlier job could not be resumed.'); setStage('search'); }
+      }
+    })();
+    return () => { cancelled = true; watchAbort.current?.abort(); };
+  }, []);
 
   return (
     <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col selection:bg-stone-900 selection:text-stone-50">
@@ -567,7 +609,7 @@ export default function App() {
         )}
 
         {stage === 'researching' && (
-          <ResearchingScreen expertName={currentAnalyzingName || nameInput || 'Subject'} />
+          <ResearchingScreen expertName={currentAnalyzingName || nameInput || 'Subject'} job={jobInfo} onCancel={handleCancelJob} />
         )}
 
         {stage === 'report' && reportData && (
@@ -582,11 +624,11 @@ export default function App() {
           </ErrorBoundary>
         )}
 
-        {stage === 'planning' && <ResearchingScreen expertName={reportData?.subjectName || 'Subject'} variant="plan" />}
+        {stage === 'planning' && <ResearchingScreen expertName={reportData?.subjectName || currentAnalyzingName || 'Subject'} variant="plan" job={jobInfo} onCancel={handleCancelJob} />}
 
         {stage === 'plan' && planData && (
           <ErrorBoundary onReset={() => setStage('report')}>
-            <GrowthPlanView plan={planData} onBack={() => setStage('report')} />
+            <GrowthPlanView plan={planData} onBack={() => setStage(reportData ? 'report' : 'search')} />
           </ErrorBoundary>
         )}
       </main>

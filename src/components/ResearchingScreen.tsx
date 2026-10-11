@@ -1,41 +1,19 @@
-import React, { useEffect, useState } from 'react';
-import { motion } from 'motion/react';
-import { Globe, Search, ShieldCheck, Sparkles, Brain, CheckCircle2 } from 'lucide-react';
+import React from 'react';
+import { Globe } from 'lucide-react';
+import type { JobView } from '../jobs-client';
 
 interface ResearchingScreenProps {
   expertName: string;
   variant?: 'report' | 'plan';
+  job?: JobView | null;
+  onCancel?: () => void;
 }
 
-const PLAN_STEPS = [
-  'Reading your report...',
-  'Finding who is at the top of your field...',
-  'Searching for real awards, conferences and media...',
-  'Opening each page to check it exists...',
-  'Putting the steps in the easiest order...',
-  'Working out the budget. Please keep this page open...',
-];
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 
-const STEPS = [
-  'Searching the web for pages about you...',
-  'Looking for your profiles on social media...',
-  'Reading the pages we found...',
-  'Checking for other people with the same name...',
-  'Writing your report. This is the longest step...',
-  'Almost done. Please keep this page open...',
-];
-
-export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName, variant = 'report' }) => {
-  const STEPS_USED = variant === 'plan' ? PLAN_STEPS : STEPS;
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentStepIndex((prev) => (prev < STEPS_USED.length - 1 ? prev + 1 : prev));
-    }, 35000);
-    return () => clearInterval(interval);
-  }, []);
-
+// Shows what the server is really doing. The job keeps running if the page is closed or refreshed.
+export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName, variant = 'report', job, onCancel }) => {
+  const waiting = job?.status === 'queued';
   return (
     <div id="researching-container" className="w-full max-w-xl mx-auto px-4 py-16 text-center">
       <div className="relative w-20 h-20 mx-auto mb-8">
@@ -53,38 +31,26 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
         {variant === 'plan' ? 'Building a plan for' : 'Building a report for'} <span className="underline decoration-stone-300">{expertName}</span>
       </h2>
 
-      <p className="text-sm text-stone-600 mb-8 max-w-md mx-auto">
-        {variant === 'plan' ? 'We are searching for real awards, speaking slots, media and grants, and opening each page to check it. This can take 10 to 20 minutes. Please keep this page open.' : 'We are reading public information to show how others may see you. This can take 5 to 20 minutes in deep mode. Please keep this page open.'}
+      <div className="bg-white rounded-xl border border-stone-200 p-5 max-w-md mx-auto shadow-xs text-left" role="status" aria-live="polite">
+        <div className="flex items-center gap-3">
+          <div className="w-4 h-4 rounded-full border-2 border-stone-900 border-t-transparent animate-spin shrink-0" />
+          <span className="text-sm font-semibold text-stone-900">
+            {waiting && job!.queuePosition > 0 ? `You are number ${job!.queuePosition} in line. Your work starts when a place is free.` : job?.stage || 'Starting...'}
+          </span>
+        </div>
+        <div className="mt-3 text-xs text-stone-500 flex justify-between">
+          <span>Time so far: {mmss(job?.elapsedSeconds ?? 0)}</span>
+          <span>{variant === 'plan' ? 'Usually 10 to 20 minutes' : 'Usually 5 to 15 minutes'}</span>
+        </div>
+      </div>
+
+      <p className="text-sm text-stone-600 mt-6 max-w-md mx-auto">
+        You can close this page or put your phone away. The work keeps running, and your result will be here when you come back to this address on the same device.
       </p>
 
-      {/* Progress Steps */}
-      <div className="bg-white rounded-xl border border-stone-200 p-5 text-left space-y-3 shadow-xs max-w-md mx-auto">
-        {STEPS_USED.map((step, idx) => {
-          const isDone = idx < currentStepIndex;
-          const isCurrent = idx === currentStepIndex;
-          return (
-            <div
-              key={step}
-              className={`flex items-center gap-3 text-xs sm:text-sm transition-opacity duration-200 ${
-                isDone
-                  ? 'text-stone-900 font-medium'
-                  : isCurrent
-                  ? 'text-stone-950 font-semibold'
-                  : 'text-stone-400 opacity-60'
-              }`}
-            >
-              {isDone ? (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              ) : isCurrent ? (
-                <div className="w-4 h-4 rounded-full border-2 border-stone-900 border-t-transparent animate-spin shrink-0" />
-              ) : (
-                <div className="w-4 h-4 rounded-full border border-stone-300 shrink-0" />
-              )}
-              <span>{step}</span>
-            </div>
-          );
-        })}
-      </div>
+      {onCancel && (
+        <button onClick={onCancel} className="mt-6 text-xs text-stone-500 underline hover:text-stone-800 cursor-pointer">Cancel and go back</button>
+      )}
 
       <div className="mt-8 text-xs font-mono-code text-stone-400">
         We only use what we find online, so some details may be missing

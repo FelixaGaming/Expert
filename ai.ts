@@ -272,7 +272,11 @@ async function claudeCli(cfg: AiConfig, rawPrompt: string, search: boolean, quer
       }
       resolve({ text, sources, socials, coverage });
     });
-    child.stdin.end(prompt);
+    // The process may already be stopped (cancelled, or it ended early): a write to it must never crash the server
+    child.stdin.on('error', () => { /* nothing is waiting for the prompt any more */ });
+    child.stdout.on('error', () => {});
+    child.stderr.on('error', () => {});
+    if (!signal?.aborted) child.stdin.end(prompt);
   });
 }
 
