@@ -4,7 +4,17 @@ import { Globe, Search, ShieldCheck, Sparkles, Brain, CheckCircle2 } from 'lucid
 
 interface ResearchingScreenProps {
   expertName: string;
+  variant?: 'report' | 'plan';
 }
+
+const PLAN_STEPS = [
+  'Reading your report...',
+  'Finding who is at the top of your field...',
+  'Searching for real awards, conferences and media...',
+  'Opening each page to check it exists...',
+  'Putting the steps in the easiest order...',
+  'Working out the budget. Please keep this page open...',
+];
 
 const STEPS = [
   'Searching the web for pages about you...',
@@ -15,12 +25,13 @@ const STEPS = [
   'Almost done. Please keep this page open...',
 ];
 
-export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName }) => {
+export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName, variant = 'report' }) => {
+  const STEPS_USED = variant === 'plan' ? PLAN_STEPS : STEPS;
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentStepIndex((prev) => (prev < STEPS.length - 1 ? prev + 1 : prev));
+      setCurrentStepIndex((prev) => (prev < STEPS_USED.length - 1 ? prev + 1 : prev));
     }, 35000);
     return () => clearInterval(interval);
   }, []);
@@ -35,20 +46,20 @@ export const ResearchingScreen: React.FC<ResearchingScreenProps> = ({ expertName
       </div>
 
       <div className="text-xs font-mono-code uppercase tracking-wider text-stone-500 mb-2">
-        Working on your report
+        {variant === 'plan' ? 'Working on your plan' : 'Working on your report'}
       </div>
 
       <h2 className="text-2xl sm:text-3xl font-serif-luxury font-medium text-stone-900 mb-4">
-        Building a report for <span className="underline decoration-stone-300">{expertName}</span>
+        {variant === 'plan' ? 'Building a plan for' : 'Building a report for'} <span className="underline decoration-stone-300">{expertName}</span>
       </h2>
 
       <p className="text-sm text-stone-600 mb-8 max-w-md mx-auto">
-        We are reading public information to show how others may see you. This can take 5 to 20 minutes in deep mode. Please keep this page open.
+        {variant === 'plan' ? 'We are searching for real awards, speaking slots, media and grants, and opening each page to check it. This can take 10 to 20 minutes. Please keep this page open.' : 'We are reading public information to show how others may see you. This can take 5 to 20 minutes in deep mode. Please keep this page open.'}
       </p>
 
       {/* Progress Steps */}
       <div className="bg-white rounded-xl border border-stone-200 p-5 text-left space-y-3 shadow-xs max-w-md mx-auto">
-        {STEPS.map((step, idx) => {
+        {STEPS_USED.map((step, idx) => {
           const isDone = idx < currentStepIndex;
           const isCurrent = idx === currentStepIndex;
           return (

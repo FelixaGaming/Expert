@@ -55,11 +55,13 @@ interface ReportViewProps {
   report: BehavioralReportData;
   onRetake: () => void;
   onManageSources?: () => void;
+  onCreatePlan?: () => void;
+  planError?: string | null;
 }
 
 type TabType = 'all' | 'mirror' | 'self-account' | 'comments' | 'reflection' | 'discourse' | 'presence' | 'sources' | 'dimensions' | 'roadmap';
 
-export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onManageSources }) => {
+export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onManageSources, onCreatePlan, planError }) => {
   const [showMethodology, setShowMethodology] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [selectedSourceCategory, setSelectedSourceCategory] = useState<string>('all');
@@ -142,6 +144,17 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
               <Printer className="w-3.5 h-3.5" />
               <span>Print or save as PDF</span>
             </button>
+
+            {onCreatePlan && (
+              <button
+                id="btn-path-to-top"
+                onClick={onCreatePlan}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors cursor-pointer shadow-sm"
+                title="Find real awards, speaking and media opportunities, the easiest pathway and a budget"
+              >
+                <span>Path to the top</span>
+              </button>
+            )}
 
             <button
               id="btn-retake"
@@ -270,6 +283,9 @@ export const ReportView: React.FC<ReportViewProps> = ({ report, onRetake, onMana
         </div>
       </div>
 
+      {planError && (
+        <div role="alert" className="no-print mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{planError}</div>
+      )}
       <Disclaimer coverage={report.coverage} />
 
       {/* Main Executive Document */}

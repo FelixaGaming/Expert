@@ -3,6 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { jsonrepair } from 'jsonrepair';
 import { verifyOrganizationChecks } from './org-verify';
+import { buildGrowthPlan, buildGrowthPrompt, type PlanAnswers } from './growth';
 import { AiError, readAiConfig, runModel, serverProviders, type AiConfig } from './ai';
 import { createServer as createViteServer } from 'vite';
 import * as cheerio from 'cheerio';
@@ -1155,6 +1156,62 @@ Respond strictly with a JSON object in this exact schema:
   return finish({ error: 'The model\'s report could not be read. Please try again.' });
 });
 
+
+// "Path to the top": a growth plan with real, link-checked opportunities, an ordered pathway and a budget
+app.post('/api/growth-plan', async (req, res) => {
+  const { subject, report, answers } = req.body || {};
+  if (!subject || typeof subject !== 'string' || !report || typeof report !== 'object') {
+    return res.status(400).json({ error: 'A report is needed to build a plan.' });
+  }
+  const subjectName = subject.trim().slice(0, 120);
+
+  let ai: AiConfig;
+  try { ai = readAiConfig(req.headers); } catch (e) { return sendAiError(res, e, 'AI not configured'); }
+
+  const clean = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice(0, max) : '');
+  const focusAll = ['awards', 'speaking', 'media', 'publications', 'funding', 'credentials', 'network'];
+  const plan: PlanAnswers = {
+    goal: clean(answers?.goal, 600),
+    budgetCap: clean(answers?.budgetCap, 20).replace(/[^0-9.]/g, ''),
+    hoursPerWeek: clean(answers?.hoursPerWeek, 20),
+    location: clean(answers?.location, 100),
+    currency: /^[A-Z]{3}$/.test(clean(answers?.currency, 3)) ? clean(answers?.currency, 3) : 'USD',
+    focus: (Array.isArray(answers?.focus) ? answers.focus : []).filter((f: unknown) => typeof f === 'string' && focusAll.includes(f)),
+  };
+
+  // Keep the connection alive through proxies while the AI works (same approach as the report)
+  res.status(200).type('json');
+  res.flushHeaders();
+  const keepAlive = setInterval(() => res.write(' '), 15_000);
+  const abort = new AbortController();
+  res.on('close', () => { clearInterval(keepAlive); if (!res.writableEnded) abort.abort(); });
+  const finish = (body: unknown) => { clearInterval(keepAlive); res.end(JSON.stringify(body)); };
+
+  try {
+    const trimmed = { ...report } as Record<string, unknown>;
+    delete trimmed.webSources;
+    delete trimmed.coverage;
+    const reportText = JSON.stringify(trimmed).slice(0, 50_000);
+    const prompt = buildGrowthPrompt(subjectName, reportText, plan);
+    // search=false: the report already holds the research. The deep-mode flag lets Claude use its own web tools to find real opportunities.
+    const response = await runModel(ai, prompt, false, undefined, { name: subjectName, depth: 'deep' }, abort.signal);
+
+    let raw: any;
+    try {
+      raw = extractJson(response.text, '{');
+    } catch (e) {
+      console.warn('Could not read the plan output:', e instanceof Error ? e.message : e);
+      return finish({ error: 'The plan could not be read. Please try again.' });
+    }
+    const result = await buildGrowthPlan(raw, subjectName, plan);
+    console.log('growth plan:', subjectName, JSON.stringify(result.checks));
+    return finish({ success: true, data: result });
+  } catch (err) {
+    if (err instanceof AiError) return finish({ error: err.message, code: err.code });
+    console.error('Growth plan failed:', err instanceof Error ? err.message : err);
+    return finish({ error: 'The plan could not be created. Please try again.' });
+  }
+});
 
 // Vite middleware in dev or static files in production
 async function startServer() {

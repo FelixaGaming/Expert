@@ -3,6 +3,9 @@ import { ResearchingScreen } from './components/ResearchingScreen';
 import { ReportView } from './components/ReportView';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Disclaimer } from './components/Disclaimer';
+import { PathToTopModal } from './components/PathToTopModal';
+import { GrowthPlanView } from './components/GrowthPlanView';
+import type { GrowthPlan, PlanAnswers } from '../growth';
 import { SettingsModal } from './components/SettingsModal';
 import { aiHeaders, getSettings, AiSettings, PROVIDERS } from './ai-settings';
 import { WebsiteVerificationModal } from './components/WebsiteVerificationModal';
@@ -33,7 +36,10 @@ export default function App() {
   const [aiSettings, setAiSettings] = useState<AiSettings | null>(getSettings());
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [searchRun, setSearchRun] = useState(0);
-  const [stage, setStage] = useState<'search' | 'researching' | 'report'>('search');
+  const [planData, setPlanData] = useState<GrowthPlan | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [isPlanModalOpen, setIsPlanModalOpen] = useState(false);
+  const [stage, setStage] = useState<'search' | 'researching' | 'report' | 'planning' | 'plan'>('search');
   const [nameInput, setNameInput] = useState('');
   const [affiliationInput, setAffiliationInput] = useState('');
   const [domainInput, setDomainInput] = useState('');
@@ -218,7 +224,34 @@ export default function App() {
     setShowOptionalDetails(false);
     setCurrentAnalyzingName('');
     setIsVerificationModalOpen(false);
+    setPlanData(null);
+    setPlanError(null);
+    setIsPlanModalOpen(false);
     setSearchRun((n) => n + 1);
+  };
+
+  // "Path to the top": a plan built from the report, with real opportunities and a budget
+  const handleCreatePlan = async (answers: PlanAnswers) => {
+    if (!reportData) return;
+    setIsPlanModalOpen(false);
+    setPlanError(null);
+    setStage('planning');
+    try {
+      const response = await fetch('/api/growth-plan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...aiHeaders() },
+        body: JSON.stringify({ subject: reportData.subjectName, report: reportData, answers }),
+      });
+      const result = await response.json().catch(() => null);
+      if (result === null) throw new Error('The connection was interrupted before your plan was ready. Your report is safe. Please press "Path to the top" again.');
+      if (!response.ok || result.error) throw new Error(result.error || `Server returned ${response.status}`);
+      if (!result.success || !result.data) throw new Error('The plan came back incomplete. Please try again.');
+      setPlanData(result.data);
+      setStage('plan');
+    } catch (err: any) {
+      setPlanError(err?.message || 'The plan could not be created. Please try again.');
+      setStage('report');
+    }
   };
 
   const runAnalysis = async (input: ExpertProfileInput) => {
@@ -543,11 +576,22 @@ export default function App() {
               report={reportData}
               onRetake={handleResetToSearch}
               onManageSources={() => handleReviewWebsites(reportData.subjectName)}
+              onCreatePlan={() => { setPlanError(null); setIsPlanModalOpen(true); }}
+              planError={planError}
             />
+          </ErrorBoundary>
+        )}
+
+        {stage === 'planning' && <ResearchingScreen expertName={reportData?.subjectName || 'Subject'} variant="plan" />}
+
+        {stage === 'plan' && planData && (
+          <ErrorBoundary onReset={() => setStage('report')}>
+            <GrowthPlanView plan={planData} onBack={() => setStage('report')} />
           </ErrorBoundary>
         )}
       </main>
 
+      <PathToTopModal isOpen={isPlanModalOpen} subjectName={reportData?.subjectName || ''} onClose={() => setIsPlanModalOpen(false)} onCreate={handleCreatePlan} />
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} onSaved={setAiSettings} />
 
       {/* Website Verification & Live Preview Modal */}
