@@ -74,5 +74,5 @@ export async function watchJob(id: string, onUpdate: (j: JobView) => void, signa
     }
     await sleep(Date.now() - started < 120_000 ? 3000 : 5000, signal);
   }
-  throw new Error('Stopped.');
+  throw new Error('Cancelled.');
 }
